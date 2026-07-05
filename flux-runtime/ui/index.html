@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Flux Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&family=Noto+Sans+SC:wght@200;300;400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ═══ 瑞士国际主义 · 克莱因蓝 IKB 主题 ═══ */
+:root{
+  --paper:#fafaf8; --paper-rgb:250,250,248;
+  --ink:#0a0a0a; --ink-rgb:10,10,10;
+  --grey-1:#f0f0ee; --grey-2:#d4d4d2; --grey-3:#737373;
+  --accent:#002FA7; --accent-rgb:0,47,167; --accent-on:#fff; --accent-bright:#5B7BFF;
+  --border:#e0e0e0;
+  --sans:"Inter","Helvetica Neue","Segoe UI",system-ui,sans-serif;
+  --zh:"Noto Sans SC","PingFang SC","Microsoft YaHei UI",sans-serif;
+  --mono:"JetBrains Mono","SF Mono","Consolas",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--paper);color:var(--ink);
+  font-family:var(--sans),var(--zh);font-weight:400;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{display:flex;flex-direction:column;overflow:hidden}
+
+/* ── 顶部导航 ── */
+nav{height:56px;display:flex;align-items:stretch;border-bottom:1px solid var(--ink);padding:0 2.5vw;flex-shrink:0;background:var(--paper)}
+nav .brand{display:flex;align-items:center;font-weight:700;font-size:15px;letter-spacing:-.02em;margin-right:3vw}
+nav .brand .dot{display:inline-block;width:8px;height:8px;background:var(--accent);margin-right:8px}
+nav .nav-links{display:flex;align-items:stretch;gap:0;flex:1}
+nav .nl{display:flex;align-items:center;padding:0 1.2rem;cursor:pointer;font-size:13px;font-weight:500;color:var(--grey-3);border-bottom:2px solid transparent;transition:color .15s,border-color .15s;letter-spacing:-.005em;position:relative}
+nav .nl:hover{color:var(--ink)}
+nav .nl.on{color:var(--ink);border-bottom-color:var(--accent)}
+nav .nl .badge{font-family:var(--mono);font-size:10px;color:var(--accent);margin-left:6px;font-weight:400}
+nav .status{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--grey-3);text-transform:uppercase;letter-spacing:.12em}
+nav .status .pulse{width:6px;height:6px;background:var(--grey-2)}
+nav .status .pulse.on{background:var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── 视图 ── */
+.view{flex:1;overflow:auto;display:none;padding:6vh 5vw 8vh}
+.view.on{display:block}
+
+/* ── 排版 ── */
+.hero-title{font-weight:200;font-size:min(5.2vw,8vh);line-height:1.02;letter-spacing:-.028em}
+.hero-title b{font-weight:700}
+.hero-sub{font-size:clamp(15px,1.15vw,18px);line-height:1.55;color:var(--grey-3);max-width:540px;margin-top:1.5vh;font-weight:400}
+.section-title{font-weight:300;font-size:clamp(22px,2.4vw,32px);line-height:1.1;letter-spacing:-.018em;margin-bottom:1vh}
+.section-badge{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:500;margin-left:10px;vertical-align:.15em}
+
+/* ── 发丝线 ── */
+.hr{height:1px;background:var(--border);margin:3vh 0}
+.hr.accent{background:var(--accent);height:2px}
+.hr.top{margin-top:0}
+
+/* ── KPI ── */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--grey-2)}
+.kpi-cell{padding:2vh 1.6vw 0;border-left:1px solid var(--grey-2)}
+.kpi-cell:first-child{border-left:none;padding-left:0}
+.kpi-cell .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--grey-3);margin-bottom:1vh}
+.kpi-cell .nb{font-weight:200;font-size:clamp(28px,3vw,42px);line-height:1;letter-spacing:-.02em;font-feature-settings:"tnum"}
+.kpi-cell .nb.accent{color:var(--accent)}
+
+/* ── 卡片 ── */
+.card{background:var(--grey-1);padding:1.6vh 1.4vw;margin-bottom:.6vh}
+.card.outlined{background:var(--paper);border-top:2px solid var(--ink)}
+.card.outlined.accent-top{border-top-color:var(--accent)}
+.card.ink{background:var(--ink);color:var(--paper)}
+.card .card-meta{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--grey-3);margin-bottom:.6vh}
+.card .card-title{font-weight:600;font-size:14px;letter-spacing:-.01em}
+.card .card-desc{font-size:13px;color:var(--grey-3);line-height:1.5;margin-top:.4vh}
+.card.ink .card-meta{color:rgba(255,255,255,.5)}
+.card.ink .card-desc{color:rgba(255,255,255,.7)}
+
+/* ── 按钮 ── */
+.btn{font-family:var(--sans),var(--zh);font-size:13px;font-weight:500;padding:8px 16px;border:none;cursor:pointer;transition:background .12s,color .12s;background:var(--grey-1);color:var(--ink)}
+.btn:hover{background:var(--grey-2)}
+.btn.primary{background:var(--accent);color:var(--accent-on)}
+.btn.primary:hover{background:var(--accent-bright)}
+.btn.ink{background:var(--ink);color:var(--paper)}
+.btn.ghost{background:transparent;border:1px solid var(--grey-2);color:var(--grey-3)}
+.btn.ghost:hover{border-color:var(--ink);color:var(--ink)}
+.btn.lg{padding:12px 24px;font-size:14px;width:100%}
+
+/* ── 表单 ── */
+label.fld{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--grey-3);margin-bottom:5px}
+input,select{width:100%;background:var(--paper);border:1px solid var(--grey-2);color:var(--ink);padding:10px 12px;font-family:var(--mono);font-size:13px;font-weight:400}
+input:focus,select:focus{outline:none;border-color:var(--accent);border-width:2px;padding:9px 11px}
+select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23737373'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row2.io{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+
+/* ── 事件 ── */
+.ev{font-family:var(--mono);font-size:12px;background:var(--grey-1);border-left:2px solid var(--accent);padding:8px 12px;margin-bottom:4px;line-height:1.5}
+.ev.err{border-left-color:var(--ink);background:#f8f8f6}
+.ev .ev-k{font-weight:600;color:var(--accent)}
+.ev .ev-k.err{color:var(--ink)}
+.ev .ev-d{color:var(--grey-3);font-size:11px;margin-top:3px;white-space:pre-wrap;word-break:break-all}
+.res{font-family:var(--mono);font-size:12px;background:var(--ink);color:var(--paper);padding:12px;margin-top:8px;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+.empty{color:var(--grey-3);font-size:14px;padding:2vh 0;text-align:center;font-weight:300}
+
+/* ── chips ── */
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:.6vh}
+.chip{font-family:var(--mono);font-size:10px;background:var(--paper);border:1px solid var(--grey-2);color:var(--grey-3);padding:3px 7px;cursor:pointer;transition:border-color .12s,color .12s}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── 底部状态栏 ── */
+.footbar{height:32px;border-top:1px solid var(--ink);display:flex;align-items:center;padding:0 2.5vw;gap:1.5vw;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--grey-3);flex-shrink:0;background:var(--paper)}
+.footbar .stage{display:flex;align-items:center;gap:4px}
+.footbar .stage b{color:var(--ink);font-weight:500}
+.footbar .arr{color:var(--grey-2)}
+
+/* ── pillar cards (overview) ── */
+.pillar-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:4vh;border-top:1px solid var(--ink)}
+.pillar{padding:3vh 1.5vw 3vh 0;cursor:pointer;transition:background .15s;border-left:1px solid var(--grey-2);padding-left:1.5vw}
+.pillar:first-child{border-left:none;padding-left:0}
+.pillar:hover{background:var(--grey-1)}
+.pillar .p-num{font-family:var(--mono);font-size:11px;color:var(--grey-3);letter-spacing:.14em;text-transform:uppercase;margin-bottom:1vh}
+.pillar .p-title{font-weight:600;font-size:16px;letter-spacing:-.01em;margin-bottom:.5vh}
+.pillar .p-desc{font-size:12px;color:var(--grey-3);line-height:1.5;margin-bottom:1.5vh}
+.pillar .p-stat{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:500}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand"><div class="dot"></div>FLUX WORKBENCH</div>
+  <div class="nav-links">
+    <div class="nl on" data-v="overview">Overview</div>
+    <div class="nl" data-v="runtime">Subagents <span class="badge" id="nv-sub">—</span></div>
+    <div class="nl" data-v="loop">Loop</div>
+    <div class="nl" data-v="assets">Assets <span class="badge" id="nv-ast">—</span></div>
+    <div class="nl" data-v="world">World</div>
+  </div>
+  <div class="status"><div class="pulse" id="pulse"></div><span id="ws-st">offline</span></div>
+</nav>
+
+<!-- ═══ OVERVIEW ═══ -->
+<div class="view on" id="v-overview">
+  <div class="hero-title">物理智能 <b>开发运行时</b></div>
+  <div class="hero-sub">四原语（Subagent / Loop / Asset / World）+ 协调器。基于 openwork，Flux-Insight 接入研究，FLUXmeme 管理资产，NVIDIA Warp 驱动仿真。机器人开发的 Claude Code。</div>
+
+  <div class="pillar-grid">
+    <div class="pillar" data-go="runtime">
+      <div class="p-num">01 / EXECUTE</div>
+      <div class="p-title">Subagent</div>
+      <div class="p-desc">多设备协调 · 多任务多线程调度 · OpenOCD / CAN / serial / camera / VLA / 求解器</div>
+      <div class="p-stat" id="ov-sub">— devices</div>
+    </div>
+    <div class="pillar" data-go="loop">
+      <div class="p-num">02 / RESEARCH</div>
+      <div class="p-title">Loop</div>
+      <div class="p-desc">Claim-Chain research → write → execute → debug · ASPIRE 失败归因 · Flux-Insight</div>
+      <div class="p-stat" id="ov-clm">— atoms</div>
+    </div>
+    <div class="pillar" data-go="assets">
+      <div class="p-num">03 / ASSET</div>
+      <div class="p-title">DevReady</div>
+      <div class="p-desc">.flux BODY / MIND / JOURNAL · FLUXmeme SDK · FluxWeave URDF 摄取 · USD / MCAP 导出</div>
+      <div class="p-stat" id="ov-ast">— records</div>
+    </div>
+    <div class="pillar" data-go="world">
+      <div class="p-num">04 / WORLD</div>
+      <div class="p-title">Simulation</div>
+      <div class="p-desc">NVIDIA Warp 机械动力学 · predict-before-act · GPU ready (RTX 2060) · 多场扩展</div>
+      <div class="p-stat" id="ov-wld">— RPM</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SUBAGENTS ═══ -->
+<div class="view" id="v-runtime">
+  <div class="hr top"></div>
+  <div class="section-title">Subagents<span class="section-badge">EXECUTE · 纯硬件 · 无 FI</span></div>
+  <div id="sub-list" style="margin-top:2vh"></div>
+  <div class="hr"></div>
+  <div class="section-title">Dispatch<span class="section-badge">measure → attribute</span></div>
+  <div style="max-width:560px;margin-top:2vh">
+    <div class="row2" style="margin-bottom:10px">
+      <div><label class="fld">target</label><select id="sa"></select></div>
+      <div><label class="fld">op</label><select id="op"></select></div>
+    </div>
+    <label class="fld">args</label>
+    <input id="args" placeholder="mvendorid  或  0x400064C0, 1"/>
+    <button class="btn primary lg" id="run" style="margin-top:12px">▶ DISPATCH</button>
+  </div>
+  <div class="hr"></div>
+  <div id="trace"></div>
+</div>
+
+<!-- ═══ LOOP ═══ -->
+<div class="view" id="v-loop">
+  <div class="hr top"></div>
+  <div class="section-title">Loop<span class="section-badge">RESEARCH → EXECUTE → ASSET → WORLD</span></div>
+  <div class="hero-sub" style="margin-top:1vh">Flux Workbench 的 Loop 寄宿在 Claude Code 中——agent 通过 MCP 工具直接调用四柱，网页 UI 仅作监控面（同 Flux-Insight 的 skills + Dashboard 模式）。</div>
+
+  <div class="kpi-row" style="margin-top:3vh">
+    <div class="kpi-cell"><div class="lbl">RESEARCH</div><div class="nb accent" id="lp-clm">0</div><div style="font-size:12px;color:var(--grey-3);margin-top:.5vh">Claim-Chain atoms</div></div>
+    <div class="kpi-cell"><div class="lbl">EXECUTE</div><div class="nb" id="lp-disp">—</div><div style="font-size:12px;color:var(--grey-3);margin-top:.5vh">last dispatch</div></div>
+    <div class="kpi-cell"><div class="lbl">ASSET</div><div class="nb" id="lp-ast">0</div><div style="font-size:12px;color:var(--grey-3);margin-top:.5vh">.flux records</div></div>
+    <div class="kpi-cell"><div class="lbl">WORLD</div><div class="nb" id="lp-wld">—</div><div style="font-size:12px;color:var(--grey-3);margin-top:.5vh">last RPM</div></div>
+  </div>
+
+  <div class="hr"></div>
+  <div class="section-title">Claude Code Integration<span class="section-badge">MCP + SKILL</span></div>
+  <div class="card ink" style="margin-top:2vh">
+    <div class="card-meta">MCP SERVER · .mcp.json</div>
+    <div class="card-title" style="font-family:var(--mono);font-size:12px;color:var(--paper)">{ "flux-workbench": { "command": "python", "args": ["-m","flux_runtime.mcp_server"] } }</div>
+    <div class="card-desc">Agent 可直接调用：flux_dispatch / flux_list_subagents / flux_list_assets / flux_sim / flux_claims</div>
+  </div>
+  <div class="card outlined accent-top" style="margin-top:.6vh">
+    <div class="card-meta">SKILL · .claude/skills/flux-workbench/SKILL.md</div>
+    <div class="card-title">Hardware Development Loop</div>
+    <div class="card-desc">在 Claude Code 中输入 /flux-workbench，agent 自动走 research→execute→asset→world 循环（同 Flux-Insight 的 /flux-pipeline 模式）</div>
+  </div>
+</div>
+
+<!-- ═══ ASSETS ═══ -->
+<div class="view" id="v-assets">
+  <div class="hr top"></div>
+  <div class="section-title">Assets<span class="section-badge">.FLUX DEVREADY · FLUXMEME</span></div>
+  <div class="kpi-row" style="margin-top:2vh">
+    <div class="kpi-cell"><div class="lbl">TOTAL</div><div class="nb" id="k-total">0</div></div>
+    <div class="kpi-cell"><div class="lbl">BODY</div><div class="nb accent" id="k-body">0</div></div>
+    <div class="kpi-cell"><div class="lbl">MIND</div><div class="nb" id="k-mind">0</div></div>
+    <div class="kpi-cell"><div class="lbl">JOURNAL</div><div class="nb" id="k-journal">0</div></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:2vh;flex-wrap:wrap">
+    <button class="btn ghost" id="as-refresh">↻ REFRESH</button>
+    <button class="btn" id="ex-usd">⬇ USD</button>
+    <button class="btn" id="ex-mcap">⬇ MCAP</button>
+    <button class="btn" id="ex-okf">⬇ OKF</button>
+  </div>
+  <div class="hr"></div>
+  <div class="section-title">FluxWeave Ingest<span class="section-badge">URDF → .FLUX BODY</span></div>
+  <div class="row2 io" style="margin-top:1.5vh;max-width:560px">
+    <div><label class="fld">URDF path</label><input id="urdf-path" placeholder="E:/path/to/robot.urdf"/></div>
+    <button class="btn ink" id="urdf-ingest" style="height:38px">INGEST</button>
+  </div>
+  <div class="hr"></div>
+  <div id="as-list"></div>
+</div>
+
+<!-- ═══ WORLD ═══ -->
+<div class="view" id="v-world">
+  <div class="hr top"></div>
+  <div class="section-title">World<span class="section-badge">NVIDIA WARP · 机械动力学</span></div>
+  <div style="max-width:480px;margin-top:2vh">
+    <label class="fld">扭矩命令 (mN·m)</label>
+    <input id="sim-torque" value="50" style="margin-bottom:12px"/>
+    <label class="fld">仿真步数 (dt = 100μs)</label>
+    <input id="sim-steps" value="2000" style="margin-bottom:12px"/>
+    <button class="btn primary lg" id="sim-run">▶ PREDICT (PREDICT-BEFORE-ACT)</button>
+  </div>
+  <div id="sim-out"></div>
+</div>
+
+<!-- ── 底部 ── -->
+<div class="footbar">
+  <div class="stage">research <b id="lb-clm">—</b></div><span class="arr">→</span>
+  <div class="stage">execute <b id="lb-exec">idle</b></div><span class="arr">→</span>
+  <div class="stage">asset <b id="lb-ast">0</b></div><span class="arr">→</span>
+  <div class="stage">world <b id="lb-wld">—</b></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
+let subs=[];
+
+/* ── nav ── */
+function go(v){
+  $$('.nl').forEach(n=>n.classList.toggle('on',n.dataset.v===v));
+  $$('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+}
+$$('.nl').forEach(n=>n.onclick=()=>go(n.dataset.v));
+$$('.pillar').forEach(p=>p.onclick=()=>go(p.dataset.go));
+
+/* ── subagents ── */
+async function refreshSubs(){
+  subs=await(await fetch('/api/subagents')).json();
+  $('#sub-list').innerHTML=subs.map(s=>`
+    <div class="card outlined">
+      <div class="card-meta">${s.kind} · ${s.target||''} ${s.gdb_port?':'+s.gdb_port:''}</div>
+      <div class="card-title">${s.id}</div>
+      <div class="chips">${s.capabilities.map(c=>`<span class="chip" data-sa="${s.id}" data-op="${c}">${c}</span>`).join('')}</div>
+    </div>`).join('');
+  $('#sa').innerHTML=subs.map(s=>`<option>${s.id}</option>`).join('');
+  syncOps(); $('#ov-sub').textContent=subs.length+' devices'; $('#nv-sub').textContent=subs.length;
+  $$('.chip').forEach(c=>c.onclick=()=>{$('#sa').value=c.dataset.sa;syncOps();$('#op').value=c.dataset.op;prefill(c.dataset.op);});
+}
+function syncOps(){const sa=subs.find(s=>s.id===$('#sa').value);$('#op').innerHTML=(sa?.capabilities||[]).map(c=>`<option>${c}</option>`).join('');}
+function prefill(op){const a=$('#args');a.value=op==='read_register'?'mvendorid':op==='read_mem'?'0x400064C0, 1':op==='flash'?'E:/path/demo.elf':'';}
+$('#sa').onchange=syncOps; $('#op').onchange=e=>prefill(e.target.value);
+
+$('#run').onclick=async()=>{
+  const t=$('#sa').value,o=$('#op').value,a=$('#args').value;if(!t||!o)return;
+  $('#trace').innerHTML='<div class="empty">dispatching…</div>';
+  try{const evs=await(await fetch(`/api/dispatch?target=${t}&op=${o}&args=${encodeURIComponent(a)}`)).json();
+    $('#trace').innerHTML=evs.length?evs.map(e=>`<div class="ev${e.kind==='error'?' err':''}"><span class="ev-k${e.kind==='error'?' err':''}">${e.source} · ${e.kind}</span><div class="ev-d">${JSON.stringify(e.data,null,1)}</div></div>`).join(''):'<div class="empty">no events</div>';
+    $('#lb-exec').textContent=t+'.'+o; $('#lp-disp').textContent=o; refreshAssets();
+  }catch(e){$('#trace').innerHTML=`<div class="ev err"><span class="ev-k err">error</span><div class="ev-d">${e}</div></div>`;}
+};
+
+/* ── assets ── */
+async function refreshAssets(){
+  const r=await(await fetch('/api/assets?limit=50')).json();
+  if(r.error){$('#as-list').innerHTML=`<div class="empty">${r.error}</div>`;return;}
+  const L=r.layers||{};
+  $('#k-total').textContent=r.count||0; $('#k-body').textContent=L.BODY||0;
+  $('#k-mind').textContent=L.MIND||0; $('#k-journal').textContent=L.JOURNAL||0;
+  $('#lb-ast').textContent=r.count||0; $('#lp-ast').textContent=r.count||0; $('#ov-ast').textContent=(r.count||0)+' records'; $('#nv-ast').textContent=r.count||0;
+  $('#as-list').innerHTML=(r.records||[]).length?r.records.map(x=>{
+    const c={BODY:'var(--accent)',MIND:'var(--ink)',JOURNAL:'var(--grey-3)'}[x.layer]||'var(--grey-3)';
+    return `<div class="card outlined" style="border-top-color:${c}"><div class="card-meta">${x.layer} · ${x.kind||'?'}</div><div class="card-desc" style="font-family:var(--mono);font-size:11px">${JSON.stringify(x.meta||{}).slice(0,90)}</div></div>`;
+  }).join(''):'<div class="empty">dispatch a measurement to create assets</div>';
+}
+$('#as-refresh').onclick=refreshAssets;
+['usd','mcap','okf'].forEach(f=>$('#ex-'+f).onclick=()=>window.open('/api/assets/export?fmt='+f));
+$('#urdf-ingest').onclick=async()=>{const p=$('#urdf-path').value.trim();if(!p)return;const r=await(await fetch('/api/assets/ingest_urdf?path='+encodeURIComponent(p),{method:'POST'})).json();if(r.error)alert(r.error);else refreshAssets();};
+
+/* ── claims ── */
+async function refreshClaims(){
+  try{const r=await(await fetch('/api/claims?limit=1')).json();
+    if(!r.error){const s=r.summary||{};const n=s.total_nodes||0;
+      $('#ov-clm').textContent=n+' atoms';$('#lb-clm').textContent=n+' atoms';$('#lp-clm').textContent=n;
+    }
+  }catch(e){}
+}
+
+/* ── world ── */
+$('#sim-run').onclick=async()=>{
+  const t=$('#sim-torque').value||50,s=$('#sim-steps').value||2000;
+  $('#sim-out').innerHTML='<div class="empty">Warp computing…</div>';
+  try{const r=await(await fetch(`/api/sim?torque_mnm=${t}&steps=${s}`,{method:'POST'})).json();
+    $('#sim-out').innerHTML=`<div class="res">ENGINE     ${r.engine}
+TORQUE     ${r.applied_torque_mnm} mN·m
+FINAL RPM  ${r.final_rpm}
+STEADY     ${r.steady_state_rpm} RPM
+TRAJECTORY ${JSON.stringify(r.trajectory_rpm_sample)}</div>`;
+    $('#lb-wld').textContent='RPM '+r.final_rpm; $('#lp-wld').textContent=r.final_rpm; $('#ov-wld').textContent='RPM '+r.final_rpm;
+  }catch(e){$('#sim-out').innerHTML=`<div class="res">error: ${e}</div>`;}
+};
+
+/* ── ws ── */
+function ws(){const s=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/events`);
+  s.onopen=()=>{$('#pulse').classList.add('on');$('#ws-st').textContent='connected';};
+  s.onclose=()=>{$('#pulse').classList.remove('on');$('#ws-st').textContent='reconnecting';setTimeout(ws,1500);};
+  s.onmessage=()=>{};
+}
+refreshSubs();refreshAssets();refreshClaims();ws();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flux-runtime"
+version = "0.0.1"
+description = "Flux Workbench runtime: 4 primitives (Subagent/Loop/Asset/World) + coordinator. Physical-AI dev runtime."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = []
+
+[project.optional-dependencies]
+# concrete integrations added per-pillar as they land
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]  # UI runtime surface
+asset = ["fluxmeme"]        # .flux DevReady (FLUXmeme SDK)
+loop = []                   # Flux-Insight + FLUXturbo (vendored/local)
+world = []                  # Newton/FLUXVortex/FluxPhased solvers
+gui = ["mcp>=1.27,<2"]      # GUI-operator via TARS computer-use (fallback)
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/flux_runtime"]

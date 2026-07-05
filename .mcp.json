@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "flux-workbench": {
+      "command": "C:\\Users\\zhang\\.conda\\envs\\FLUX\\python.exe",
+      "args": ["-m", "flux_runtime.mcp_server"],
+      "env": {
+        "PYTHONPATH": "E:\\DATA\\vscode\\ARIS\\FluxWorkbench\\flux-runtime\\src",
+        "FLUX_RUNTIME_URL": "http://127.0.0.1:8430"
+      }
+    }
+  }
+}
