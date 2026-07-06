@@ -98,6 +98,10 @@ native/build/
 spike/**/node_modules/
 spike/**/.venv/
 
+# Vendored upstream snapshots (reference only; reconstructed IP lives in flux_brain/)
+# See brain/vendor/README.md for pinned commits + reconstruct commands.
+brain/vendor/openrath/
+
 # Capability keys (per-install; never commit)
 .flux/keys/
 

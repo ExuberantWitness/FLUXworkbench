@@ -39,3 +39,25 @@ body {
 .ev-data { color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-error .ev-topic { color: #f48771; }
 .event-execute .ev-source { color: #c586c0; }
+
+/* sidebar */
+.side-section { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.side-h { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+.side-val { color: var(--fg); font-size: 12px; }
+.peer { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; color: var(--fg); }
+.peer .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+.peer.on .dot { background: #4ec9b0; }
+.peer.off .dot { background: #555; }
+.peer.off { color: #777; }
+
+/* workflow DAG in sidebar */
+.wf-steps { list-style: none; margin: 0; padding: 0; }
+.wf-step { display: flex; flex-direction: column; padding: 4px 0 4px 10px; border-left: 2px solid #3a3a3a; margin-left: 4px; }
+.wf-name { color: #4ec9b0; font-size: 12px; }
+.wf-op { color: #888; font-size: 10px; font-family: ui-monospace, monospace; }
+
+/* status bar */
+.status-bar .ok { color: #a6f0c6; }
+.status-bar .muted { color: rgba(255,255,255,0.65); }
+.status-bar .alarm { color: #ffd479; font-weight: 600; }
+.status-bar .spacer { flex: 1; }

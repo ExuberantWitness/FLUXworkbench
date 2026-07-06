@@ -12,6 +12,7 @@ import { Scheduler } from "./kernel/scheduler";
 import { Supervisor } from "./kernel/supervisor";
 import { NodeIpcTransport } from "./kernel/transports/node-ipc";
 import { OpenOcdAgent } from "./kernel/agents/openocd";
+import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runner";
 import type { Event } from "./kernel/types";
 
 // ── path resolution (dev: cwd=app/, repo root = ../.. from out/main) ─────────
@@ -44,7 +45,7 @@ async function mirrorEventsToRenderer(): Promise<void> {
   const topics = [
     "brain.ready", "device.attached", "device.detached", "alarm.critical",
     "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
-    "agent.event", "run.state",
+    "agent.event", "run.state", "workflow.published",
   ];
   for (const t of topics) {
     await bus.subscribe(t, (e: Event) => {
@@ -67,23 +68,16 @@ async function bootKernel(): Promise<void> {
   const ocd = new OpenOcdAgent(bus);
   await ocd.start(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd] start failed:", e));
 
-  // When the brain signals ready, dispatch a smoke Task that pokes OpenOCD so the
-  // studio visibly shows the pipeline on launch.
-  await bus.subscribe("brain.ready", async () => {
-    scheduler.enqueue({
-      identity: { name: "boot-smoke", description: "probe OpenOCD on boot" },
-      trigger: "parent", flow: { mode: "leaf" }, deps: [],
-      runtime: { priority: 30, isolation: "subprocess", ipc: "topic" },
-      manifestRef: "",
-    });
-    const t = scheduler.pick();
-    if (t) {
-      await bus.publish({
-        source: "kernel", kind: "execute", topic: "cmd.halt",
-        data: { args: [] }, trace_id: "boot",
-      });
-    }
+  // When the brain publishes a workflow DAG, dispatch its cmd.* steps in order
+  // (decision #20: TS dispatches the flow Python produced). The brain's
+  // openocd.event reaction handles characterize + devready.commit.
+  const runner = new WorkflowRunner(bus);
+  await bus.subscribe("workflow.published", (e: Event) => {
+    void runner
+      .run(e.data as unknown as WorkflowDescriptor)
+      .catch((err) => console.error("[workflow] run failed:", err));
   });
+  void scheduler; // scheduler wired for ad-hoc tasks; workflow steps dispatch directly via the bus.
 }
 
 async function createWindow(): Promise<void> {

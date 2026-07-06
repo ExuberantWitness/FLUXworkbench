@@ -95,9 +95,57 @@ def main() -> int:
                         stream=sys.stderr)
     bus = IpcBus()
     log.info("flux-brain IPC bridge ready (stdio)")
-    # Demo wiring for smoke test: subscribe to cmd.flash, announce ready.
-    def on_cmd_flash(_evt: dict[str, Any]) -> None: ...  # real handler wired in build-task #4
-    bus.subscribe("cmd.flash", on_cmd_flash)
+
+    # Live memory-page trail: one Session per boot, appending a chunk per uORB event.
+    # On a successful flash/halt the brain forks a branch and commits a devready
+    # asset bundle carrying the branch's lineage (provenance / 谱系). Real
+    # characterization + Anthropic agent arrive in build-task #4.
+    from flux_brain.session import create_session, event_chunk, user_text_chunk
+    from flux_brain.workflow import board_bringup_workflow
+
+    session = create_session(
+        user_text_chunk("Flux Workbench boot — HPM6E00 bring-up"),
+        operator="boot",
+    )
+
+    # Python produces the flow (decision #20): publish the board-bringup DAG so the
+    # TS kernel can dispatch it (and the renderer can render it). TS dispatch is the
+    # next build-task; for now the boot-smoke still pokes cmd.flash directly.
+    wf = board_bringup_workflow()
+    bus.publish({
+        "source": "brain", "kind": "propose", "topic": "workflow.published",
+        "data": wf.to_dict(), "trace_id": "boot",
+    })
+
+    def on_openocd(evt: dict[str, Any]) -> None:
+        nonlocal session
+        session = session.append(
+            event_chunk(evt.get("topic", "openocd.event"),
+                        evt.get("source", "openocd"), evt.get("data"))
+        )
+        d = evt.get("data", {}) or {}
+        reply = str(d.get("reply", ""))
+        # commit a devready asset only on a successful flash (the real bring-up
+        # milestone); halt is just a probe step.
+        if d.get("cmd") == "cmd.flash" and "OK" in reply:
+            branch = session.fork(operator="devready-commit")
+            bus.publish({
+                "source": "brain", "kind": "execute", "topic": "asset.committed",
+                "data": {
+                    "asset_id": "hpm6e00-bringup-001",
+                    "components": ["device-profile", "driver", "bench"],
+                    "trigger": d.get("cmd"),
+                    "session": {
+                        "id": branch.id,
+                        "chunks": len(branch.chunk_table),
+                        "lineage": branch.lineage.to_dict(),
+                    },
+                },
+                "trace_id": evt.get("trace_id", ""),
+            })
+            log.info("devready commit: %s", branch.brief())
+
+    bus.subscribe("openocd.event", on_openocd)
     bus.publish({"source": "brain", "kind": "log", "topic": "brain.ready",
                  "data": {}, "trace_id": ""})
     bus.run()
