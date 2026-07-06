@@ -1,0 +1,8 @@
+# Zenoh config for Flux Workbench local bus (uORB-over-Zenoh).
+# v1: localhost-only (in-process + cross-process); remote (Tailscale) via mod-tailscale broker in v2.
+mode = "peer"
+listen = ["tcp/127.0.0.1:7447"]
+connect = []
+
+[scouting]
+multicast = false  # local single-node; disable multicast discovery

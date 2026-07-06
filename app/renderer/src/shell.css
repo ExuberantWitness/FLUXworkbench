@@ -1,0 +1,41 @@
+:root {
+  --bg: #1e1e1e;
+  --bg-alt: #252526;
+  --bg-active: #094771;
+  --fg: #cccccc;
+  --border: #333333;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 48px 240px 1fr;
+  grid-template-rows: 1fr 220px 24px;
+  grid-template-areas:
+    "activity sidebar editor"
+    "activity panel  panel"
+    "status  status  status";
+  height: 100vh;
+}
+.activity-bar { grid-area: activity; background: var(--bg-alt); border-right: 1px solid var(--border); }
+.sidebar     { grid-area: sidebar;  background: var(--bg-alt); overflow: auto; }
+.editor      { grid-area: editor;   background: var(--bg);     overflow: auto; }
+.panel       { grid-area: panel;    background: var(--bg-alt); border-top: 1px solid var(--border); overflow: auto; }
+.status-bar  { grid-area: status;   background: #007acc; color: #fff; display: flex; align-items: center; padding: 0 8px; font-size: 12px; gap: 16px; }
+
+.placeholder { color: #666; padding: 24px; font-style: italic; }
+.panel-tab { padding: 6px 12px; border-bottom: 1px solid var(--border); color: #aaa; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.event-stream { list-style: none; margin: 0; padding: 4px 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.event { padding: 2px 0; display: grid; grid-template-columns: 180px 90px 1fr; gap: 8px; }
+.event.empty, .event-stream:empty + .empty { color: #666; font-style: italic; }
+.ev-topic { color: #4ec9b0; }
+.ev-source { color: #dcdcaa; }
+.ev-data { color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-error .ev-topic { color: #f48771; }
+.event-execute .ev-source { color: #c586c0; }

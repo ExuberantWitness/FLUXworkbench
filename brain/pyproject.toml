@@ -1,0 +1,26 @@
+# Flux Workbench — Python execution layer (Tier 3, single process).
+# OpenRath-reconstructed agent/workflow/session/storage/asset. Produces workflow flow (DAG);
+# the TS kernel dispatches. Connects to the TS kernel over Zenoh (uORB topics).
+[project]
+name = "flux-brain"
+version = "0.1.0"
+description = "Flux Workbench Python execution layer (OpenRath-reconstructed)"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40",
+    "eclipse-zenoh>=1.0",
+    "mcp>=1.0",
+    "protobuf>=5.0",
+    # OpenRath primitives (Session/Workflow/lineage) are vendored/reconstructed under
+    # flux_brain/_openrath and not yet wired — added during build-task #4.
+]
+
+[project.scripts]
+flux-brain = "flux_brain.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["flux_brain"]

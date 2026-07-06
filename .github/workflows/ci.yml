@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [v2, main]
+  pull_request:
+
+jobs:
+  native:
+    name: C (native/openocd)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build native/build -j
+
+  python:
+    name: Python (brain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff mypy
+      - run: ruff check brain/
+      # mypy / pytest deferred until OpenRath + Zenoh wired (build-task #4)
+      - run: python -c "import ast; ast.parse(open('brain/flux_brain/__main__.py').read())"
+
+  ts:
+    name: TypeScript (app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      # typecheck deferred until electron-vite + react + zenoh-ts wired (build-task #5)
+      - run: echo "TS typecheck deferred to build-task #5"

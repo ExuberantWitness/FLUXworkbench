@@ -1,0 +1,17 @@
+# Flux Workbench — root Python tooling config.
+# The Python execution package is `brain/` (single process, OpenRath-reconstructed); see brain/pyproject.toml.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["brain", "bus"]

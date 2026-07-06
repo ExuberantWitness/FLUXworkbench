@@ -1,65 +1,72 @@
-# Flux Workbench
+# Flux Workbench v2
 
-Physical-AI 开发**运行时**（壳）——四原语（Subagent / Loop / Asset / World）+ 协调器。
-**Flux 运行时是壳（host）**；openwork 与 Flux-Insight 作为 backend **接入**它，非反过来。
+> Robot-dev **Claude Code** — a one-stop hardware-R&D studio that **merges and surpasses vendor AI-agent IDEs** (CC Studio, STM32CubeIDE, …). VSCode-like, hardware-enhanced.
 
-> 设计计划（权威）：`C:\Users\zhang\.claude\plans\witty-growing-dragon.md`
+> Branch **`v2`** is the active rewrite. `main` preserves the v0 toy (Python flux-runtime + vendored openwork + single-file UI) for history.
 
-## 架构（谁接入谁）
+## What it is
+
+A microkernel studio for physical-AI development, structured as **two cores**:
+
+- **Infrastructure core** — unified `3-axis × 2-resource` scheduler (flow / time / priority × compute / storage), all-process microkernel, capability-signed modules, uORB-over-Zenoh bus. **Hardware-first, agent-assisted** ("硬件不等人").
+- **Application core** — four first-class primitives (`subagent` / `loop` / `devready` / `simulation`) + workflow scheduling, all = specializations of the scheduler's `Task`.
+
+Three languages, **VSCode-model** layered (base / execution / tool):
+
+| Tier | Language | Role | Like |
+|---|---|---|---|
+| **base** | TypeScript | Electron studio (Warp-grade UI, **仿 VSCode 布局**) + **kernel** | VSCode itself |
+| **execution (on base)** | Python | AI agent + workflow-flow producer + session/devready | VSCode's Python extension |
+| **tool** | C/C++ | OpenOCD / future motor·CAN·SPI (RT, embodied agents) | compiler/debugger VSCode invokes |
+
+## Six pain points solved (v1: ①②④⑤⑥; ③ instrument v2)
+
+| # | Pain | Fix |
+|---|---|---|
+| ① | CubeMX UI lock-in | peripheral/pin/clock **codegen** (scriptable, agent-driven) |
+| ② | Schematic ≠ OCR | **local MiniCPM5** multimodal → netlist + components + signals |
+| ③ | Instruments (scope/LA) | SCPI/VISA instrument subagents (**v2**) |
+| ④ | Context/asset sprawl | devready asset library + storage scheduling |
+| ⑤ | Always-asking-for-approval | **policy gate** autonomy (auto within policy) |
+| ⑥ | Physical subagents 2nd-class | OpenOCD etc. as **first-class embodied agents** |
+
+## Repo layout
+
 ```
-┌──────────────────────── Flux 运行时（壳 · Python + Web UI :8430）────────────────────────┐
-│  协调器（多任务多线程）调度四原语：Subagent · Loop · Asset · World                         │
-│  ┌───────────── 接入的 backend（皆为 Subagent，统一调度）──────────────┐                  │
-│  │  Flux-Insight  研究大脑（Claim-Chain；Loop 的 research/write/debug） │                  │
-│  │  openwork      agent 引擎（OpenCode；Loop 的 write/execute）          │                  │
-│  └────────────────────────────────────────────────────────────────────┘                  │
-│  设备 subagent（OpenOCD 多实例…）· Asset（FLUXmeme .flux）· World（Newton 仿真）            │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+app/            TS studio (Electron + React + Monaco, kernel in main)         [Tier 1 base]
+native/openocd/ C tool: OpenOCD TCL-RPC driver (embodied agent)               [Tier 2 tool]
+brain/          Python execution: agent / workflow / session / storage / asset [Tier 3 execution]
+bus/topics/     uORB typed-topic schemas (protobuf) + Zenoh config             [neutral]
+mod-headless/   CLI/TUI mode (peer)
+mod-tailscale/  remote broker (Zenoh↔Tailscale, capability-gated)
+docs/           architecture.md + adr/* + v2/*
 ```
-openwork 的 Electron 不作壳；Flux 运行时 headless 驱动 openwork 的 orchestrator/server。
 
-## 仓库布局
-- `apps/` `packages/` — openwork 上游（被 Flux 运行时驱动的 agent 引擎；不作壳）
-- `flux-runtime/` — **Flux 运行时核心**（Python；壳）
-  - `src/flux_runtime/primitives.py` — 四原语抽象 + 统一 Message/Event 流
-  - `src/flux_runtime/coordinator.py` — 多任务多线程调度器（asyncio + 线程池 + 进程池）
-  - `src/flux_runtime/subagents/openocd.py` — OpenOCD 设备 subagent（多实例，guideline.md 接地）
-  - `src/flux_runtime/backends/flux_insight.py` — **Flux-Insight 接入**（research/query_claims/ingest；:8420）
-  - `src/flux_runtime/backends/openwork.py` — **openwork 接入**（agent_run/agent_status；:8431）
-  - `src/flux_runtime/mock.py` — 离线 mock subagent（罐装 guideline 真值，免硬件）
-  - `src/flux_runtime/server.py` — FastAPI + WebSocket（UI 面）
-  - `ui/index.html` — 单文件 Web UI（三区：Subagents / Dispatch+Trace / Live stream）
+## Status
 
-## 运行时 UI（现在跑）
-```powershell
-cd E:\DATA\vscode\ARIS\FluxWorkbench\flux-runtime
-$env:PYTHONPATH="src"
-C:\Users\zhang\.conda\envs\FLUX\python.exe -m flux_runtime
-# → 打开 http://127.0.0.1:8430
+v2 skeleton (this branch). See [`docs/architecture.md`](docs/architecture.md) and [`docs/adr/`](docs/adr/) for the design; the approved plan lives at `~/.claude/plans/plan-cozy-snowflake.md`.
+
+## Run (v2)
+
+This is a pnpm workspace — **use pnpm, not npm** (npm hangs inside workspace packages).
+
+```bash
+pnpm install                          # installs app/ deps (electron, react, monaco, vite)
+pnpm --filter @fluxworkbench/app dev  # electron-vite dev → opens the studio window
+pnpm --filter @fluxworkbench/app build
 ```
-默认两个 mock 设备（hpm-0 / stm32-0，离线 demo）。点 capability chip → Run → 看 trace + 实时流。
 
-### 接入 backend（env 驱动，opt-in）
-```powershell
-$env:FLUX_FI_ROOT="E:\DATA\vscode\ARIS\Flux-Insight"
-$env:FLUX_FI_PYTHON="C:\Users\zhang\.conda\envs\FLUX\python.exe"
-$env:FLUX_OPENWORK_ROOT="E:\DATA\vscode\ARIS\FluxWorkbench"
-# 再启动 flux_runtime → UI 多出 flux-insight / openwork 两个 Subagent 卡片
-```
-> backend 的 HTTP 调用是 best-effort（对 live 引擎核实端点后定稿）。Flux-Insight 也可进程内直调（`claim_chain.api.ClaimChainAPI` 已可 import）。
+**Gotchas in this environment:**
+- `ELECTRON_RUN_AS_NODE` is set by the host → force-unset it or electron runs as plain Node (`require("electron")` returns a path string → `electron.app` undefined):
+  ```bash
+  env -u ELECTRON_RUN_AS_NODE pnpm --filter @fluxworkbench/app dev
+  ```
+- No real GPU / virtual display → pass `--disable-gpu --no-sandbox` (optional on a real desktop):
+  ```bash
+  env -u ELECTRON_RUN_AS_NODE pnpm --filter @fluxworkbench/app dev -- --disable-gpu --no-sandbox
+  ```
+- `@vitejs/plugin-react` must be **v4** (v6+ needs vite 8). Pinned in app/package.json.
 
-## 基座（openwork fork，已验证可构建）
-- ✅ openwork `dev` 浅克隆（>= v0.17.9）→ `flux/main`；`/ee/` Fair-Source 外科切除
-- ✅ `pnpm install`（1359 包）+ better-sqlite3 对 Electron 35 ABI 源码重建（`.npmrc` 持久化 python+msvs）
-- ✅ UI 构建（Vite 26.8s）
-- ⚠️ Bun 装不上（GFW）→ openwork server 走 Node fallback（`apps/server/src/serve-node.ts`）
+Verified: `electron-vite build` produces `out/{main,preload,renderer}`; `dev` launches a full Electron process tree (8 procs) with the React+Monaco renderer served at `:5173`.
 
-## 进行中
-CAN/serial/camera/VLA/solver/GUI-operator subagent · Loop（Claim-Chain research→execute→debug + ASPIRE）· Asset（FLUXmeme+FluxWeave+PHM）· World（push→sim）· backend HTTP 端点对 live 引擎核实。
-
-## ee-ectomy 清单
-`ee/` 删；`pnpm-workspace.yaml` 去 ee globs；`package.json` 去 den/web/headless 脚本（54→37）；
-`turbo.json` globalEnv 去 DEN/STRIPE/BETTER_AUTH（22→1）；den/daytona workflows + cloud/daytona evals + packaging/helm 删。
-
----
-*Flux Workbench · 物理 AI 基础设施 · 机器人开发的 Claude Code*
+*v0 (main): Python flux-runtime + vendored openwork + single-file UI — superseded.*

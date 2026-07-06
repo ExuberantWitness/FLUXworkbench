@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+// Flux Workbench — uORB topic schemas (subset). Zenoh key = flux/<workspace>/<domain>/<subject>.
+// Codegen to TS (bus buf gen), C (nanopb), Python (protoc) — wired in build-task #2.
+
+package flux.topics;
+
+// device.attached — published by an OpenOCD embodied agent when a board is detected.
+message DeviceAttached {
+  string device_id = 1;       // e.g. "hpm6e00-0"
+  string probe = 2;           // e.g. "cmsis-dap"
+  string chip = 3;            // e.g. "HPM6E0"
+  string interface = 4;       // swd | jtag
+  uint64 ts_ms = 5;
+  string trace_id = 6;        // lineage (ported from v0 Message.trace_id)
+}
+
+// device.detached
+message DeviceDetached {
+  string device_id = 1;
+  uint64 ts_ms = 2;
+  string trace_id = 3;
+}
+
+// alarm.critical — preempts everything (priority 90).
+message AlarmCritical {
+  string source = 1;          // module name
+  string code = 2;            // e.g. "over-current", "probe-lost", "policy-violation"
+  string message = 3;
+  uint64 ts_ms = 4;
+  string trace_id = 5;
+}
+
+// cmd.flash — sent to OpenOCD embodied agent (capability: touch-hardware).
+message CmdFlash {
+  string device_id = 1;
+  string elf_path = 2;
+  string trace_id = 3;
+}
+
+// asset.committed — published when a devready bundle is committed to the library.
+message AssetCommitted {
+  string asset_id = 1;
+  string workflow_id = 2;
+  string run_id = 3;
+  repeated string components = 4;  // ["device-profile","driver","bench"]
+  string trace_id = 5;
+}

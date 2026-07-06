@@ -73,3 +73,31 @@ evals/results/
 flux-runtime/.fluxws/
 flux-runtime/**/*.pyc
 __pycache__/
+
+# ── v2 build artifacts ───────────────────────────────────────────
+# TS (app/)
+app/dist/
+app/dist-electron/
+app/node_modules/
+mod-headless/node_modules/
+mod-tailscale/node_modules/
+
+# Python (brain/)
+brain/.venv/
+brain/.pytest_cache/
+brain/.ruff_cache/
+brain/.mypy_cache/
+brain/build/
+brain/dist/
+*.egg-info/
+
+# C (native/)
+native/build/
+
+# Spike scratch (build-task #2 Zenoh perf; scripts kept, deps ignored)
+spike/**/node_modules/
+spike/**/.venv/
+
+# Capability keys (per-install; never commit)
+.flux/keys/
+
