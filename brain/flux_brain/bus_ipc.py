@@ -218,6 +218,17 @@ def main() -> int:
                 },
                 "trace_id": evt.get("trace_id", ""),
             })
+            # persist to flywheel asset store (FTS5 searchable)
+            try:
+                from flux_brain.asset_store import commit_asset
+                commit_asset({
+                    "asset_id": "hpm6e00-bringup-001",
+                    "components": ["device-profile", "driver", "bench"],
+                    "characterization": characterization,
+                    "session": {"id": branch.id, "lineage": branch.lineage.to_dict()},
+                })
+            except Exception:  # noqa: BLE001
+                log.warning("asset store commit failed (non-fatal)")
             log.info("devready commit: %s", branch.brief())
 
     bus.subscribe("openocd.event", on_openocd)
