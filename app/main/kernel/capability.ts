@@ -6,6 +6,7 @@
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto";
 import type { CapabilityManifest } from "./types";
+export type { CapabilityManifest };
 
 const SIGN_ALG = "ed25519";
 
