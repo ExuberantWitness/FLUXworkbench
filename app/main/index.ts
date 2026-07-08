@@ -64,9 +64,22 @@ async function bootKernel(): Promise<void> {
   // NodeIpcTransport.start spawns directly; track via supervisor for lifecycle logs.
   brainTransport.start(BRAIN_PY, ["-m", BRAIN_MODULE], { PYTHONPATH: BRAIN_PATH });
 
-  // OpenOCD embodied agent (mock in dev; real flux_openocd_cli in prod).
+  // OpenOCD embodied agent: real (HPM OpenOCD + HPM6E00 board) or mock.
   const ocd = new OpenOcdAgent(bus);
-  await ocd.start(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd] start failed:", e));
+  if (process.env["FLUX_OPENOCD_REAL"] === "1") {
+    const ocdBin = process.env["FLUX_OPENOCD_BIN"] ?? "/tmp/hpm-openocd/src/openocd";
+    const ocdCfg = process.env["FLUX_OPENOCD_CFG"]
+      ?? "/home/exuber/hpm_sdk/boards/openocd/hpm6e00_all_in_one.cfg";
+    const sdkBase = process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk";
+    await ocd.startReal(ocdBin, ocdCfg, sdkBase)
+      .then(() => console.log("[kernel] OpenOCD real mode: HPM6E00 connected"))
+      .catch((e) => {
+        console.error("[kernel] OpenOCD real mode failed, falling back to mock:", e.message);
+        void ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch(() => void 0);
+      });
+  } else {
+    await ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd] start failed:", e));
+  }
 
   // When the brain publishes a workflow DAG, dispatch its cmd.* steps in order
   // (decision #20: TS dispatches the flow Python produced). The brain's
