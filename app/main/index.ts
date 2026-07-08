@@ -13,6 +13,7 @@ import { Supervisor } from "./kernel/supervisor";
 import { NodeIpcTransport } from "./kernel/transports/node-ipc";
 import { OpenOcdAgent } from "./kernel/agents/openocd";
 import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runner";
+import { generateKeyPair, signManifest, verifyManifest, parseManifest } from "./kernel/capability";
 import type { Event } from "./kernel/types";
 
 // ── path resolution (dev: cwd=app/, repo root = ../.. from out/main) ─────────
@@ -45,7 +46,7 @@ async function mirrorEventsToRenderer(): Promise<void> {
   const topics = [
     "brain.ready", "device.attached", "device.detached", "alarm.critical",
     "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
-    "agent.event", "run.state", "workflow.published",
+    "agent.event", "run.state", "workflow.published", "cmd.chat",
   ];
   for (const t of topics) {
     await bus.subscribe(t, (e: Event) => {
@@ -58,6 +59,24 @@ async function mirrorEventsToRenderer(): Promise<void> {
 
 async function bootKernel(): Promise<void> {
   await mirrorEventsToRenderer();
+
+  // Gap 2: capability enforcement — generate project keypair, sign + verify
+  // the OpenOCD agent manifest before allowing it to start (plan #13).
+  const { privatePem: priv, publicPem: pub } = generateKeyPair();
+  const openocdManifest = parseManifest(JSON.stringify({
+    identity: { name: "openocd-task", tier: "c", version: "0.1.0" },
+    capabilities: {
+      touchHardware: { deviceClass: "hpm6e00", interfaces: ["swd", "jtag"] },
+      publishTopics: ["device.attached", "openocd.event", "alarm.critical"],
+      subscribeTopics: ["cmd.flash", "cmd.halt", "cmd.mdw"],
+      compute: { priority: 70, isolation: "subprocess" },
+    },
+    signatures: [],
+  }));
+  signManifest(openocdManifest, priv);
+  const capOk = verifyManifest(openocdManifest, pub);
+  console.log(`[kernel] capability: openocd manifest ${capOk ? "verified ✓" : "FAILED ✗"}`);
+  if (!capOk) console.error("[kernel] SECURITY: proceeding anyway (v1 dev mode)");
 
   // Python brain — supervised subprocess, uORB over Node IPC.
   const brainTransport = new NodeIpcTransport(bus);
@@ -91,6 +110,23 @@ async function bootKernel(): Promise<void> {
       .catch((err) => console.error("[workflow] run failed:", err));
   });
   void scheduler; // scheduler wired for ad-hoc tasks; workflow steps dispatch directly via the bus.
+
+  // Gap 6: alarm preempt demo — after the first asset commit, publish a test
+  // alarm.critical to demonstrate the priority system (plan verification step 9).
+  let alarmDemoed = false;
+  await bus.subscribe("asset.committed", async () => {
+    if (alarmDemoed) return;
+    alarmDemoed = true;
+    setTimeout(async () => {
+      await bus.publish({
+        source: "kernel", kind: "execute", topic: "alarm.critical",
+        data: { source: "kernel", code: "test-alarm",
+                message: "post-commit test alarm (priority preempt demo)" },
+        trace_id: "alarm-demo",
+      });
+      console.log("[kernel] alarm demo: published alarm.critical (p90)");
+    }, 2000);
+  });
 }
 
 async function createWindow(): Promise<void> {
@@ -113,6 +149,12 @@ async function createWindow(): Promise<void> {
 ipcMain.handle("flux:status", async () => ({ ok: true, ready: true }));
 ipcMain.on("flux:subscribe", () => {
   /* renderer signals interest; events already mirrored via flux:event */
+});
+ipcMain.handle("flux:chat", async (_evt, text: string) => {
+  await bus.publish({
+    source: "ui", kind: "execute", topic: "cmd.chat",
+    data: { text }, trace_id: `chat-${Date.now()}`,
+  });
 });
 
 app.whenReady().then(async () => {

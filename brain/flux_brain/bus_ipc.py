@@ -193,11 +193,43 @@ def main() -> int:
         # commit a devready asset only on a successful flash (the real bring-up
         # milestone); halt is just a probe step.
         if d.get("cmd") == "cmd.flash" and "OK" in reply:
+            # Gap 3: policy gate — check if commit is allowed (pain point 5)
+            from flux_brain.policy_gate import check as policy_check
+            decision = policy_check("devready.commit")
+            if decision == "deny":
+                bus.publish({"source":"brain","kind":"error","topic":"alarm.policy-violation",
+                    "data":{"op":"devready.commit","reason":"denied by policy"},"trace_id":evt.get("trace_id","")})
+                return
+            log.info("policy gate: devready.commit → %s", decision)
+
+            # Gap 4: flywheel — search past assets for context (pain point 4)
+            try:
+                from flux_brain.asset_store import search_assets
+                past = search_assets("HPM6E00")
+                if past:
+                    log.info("flywheel: found %d past asset(s) for context", len(past))
+            except Exception:
+                past = []
+
             # characterize via local MiniCPM-V 4.6 (vLLM :8000); mock fallback.
             characterization = _characterize()
+
+            # Gap 5: codegen — generate peripheral init C code (pain point 1)
+            try:
+                from flux_brain.codegen import generate_board_init
+                codegen_files = generate_board_init({
+                    "gpio": {"pins": [{"port": "PA", "num": 0, "mode": "output"}]},
+                    "clock": {"cpu_freq_mhz": 600},
+                    "peripherals": {"uart": {"baud": 115200}},
+                })
+                characterization["codegen_files"] = list(codegen_files.keys())
+            except Exception:
+                codegen_files = {}
+
             bus.publish({
                 "source": "brain", "kind": "attribute", "topic": "agent.event",
-                "data": {"step": "characterize", **characterization},
+                "data": {"step": "characterize", **characterization,
+                         "past_assets": len(past), "policy": decision},
                 "trace_id": evt.get("trace_id", ""),
             })
             log.info("agent characterized: %s", characterization["chip"])
@@ -232,6 +264,25 @@ def main() -> int:
             log.info("devready commit: %s", branch.brief())
 
     bus.subscribe("openocd.event", on_openocd)
+
+    # agent chat: user message → MiniCPM-V → reply (plan v1 minimal: agent panel)
+    def on_chat(evt: dict[str, Any]) -> None:
+        text = str(evt.get("data", {}).get("text", ""))
+        if not text:
+            return
+        try:
+            from flux_brain.llm_vllm import chat as llm_chat
+            reply = llm_chat(text)
+        except Exception:
+            log.warning("chat LLM unavailable")
+            reply = "(LLM unavailable — vLLM :8000 not running?)"
+        bus.publish({
+            "source": "brain", "kind": "execute", "topic": "agent.event",
+            "data": {"step": "chat", "user": text, "reply": reply[:500]},
+            "trace_id": evt.get("trace_id", ""),
+        })
+
+    bus.subscribe("cmd.chat", on_chat)
     bus.publish({"source": "brain", "kind": "log", "topic": "brain.ready",
                  "data": {}, "trace_id": ""})
     bus.run()

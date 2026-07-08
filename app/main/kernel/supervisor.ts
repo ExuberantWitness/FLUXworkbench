@@ -35,7 +35,14 @@ export class Supervisor {
       // eslint-disable-next-line no-console
       console.warn(`[supervisor] ${spec.name} exited code=${code} signal=${signal}`);
       this.procs.delete(spec.name);
-      // TODO(build-task #3): implement restart backoff + watchdog per spec.restart.
+      // Gap 7: auto-restart per policy
+      const policy = spec.restart ?? "on-failure";
+      const failed = code !== 0 || signal;
+      if ((policy === "always") || (policy === "on-failure" && failed)) {
+        // eslint-disable-next-line no-console
+        console.log(`[supervisor] restarting ${spec.name} (policy=${policy})`);
+        setTimeout(() => this.doSpawn(spec), 1000);
+      }
     });
     p.on("error", (err) => {
       // eslint-disable-next-line no-console

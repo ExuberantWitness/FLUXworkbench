@@ -22,6 +22,9 @@ const api = {
   status(): Promise<unknown> {
     return ipcRenderer.invoke("flux:status");
   },
+  sendChat(text: string): Promise<void> {
+    return ipcRenderer.invoke("flux:chat", text);
+  },
 };
 
 contextBridge.exposeInMainWorld("flux", api);
