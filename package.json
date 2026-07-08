@@ -1,7 +1,7 @@
 {
   "name": "fluxworkbench",
-  "private": true,
   "version": "0.1.0",
+  "author": "Flux Workbench Team",
   "description": "Flux Workbench v2 — robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
@@ -9,9 +9,35 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "build:native": "cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release && cmake --build native/build -j"
+    "build:native": "cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release && cmake --build native/build -j",
+    "dist": "pnpm -r build && npx electron-builder --linux AppImage",
+    "dist:deb": "pnpm -r build && npx electron-builder --linux deb",
+    "start": "./start.sh"
   },
   "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.fluxworkbench.studio",
+    "productName": "FluxWorkbench",
+    "directories": {
+      "app": "app",
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "brain", "to": "brain" },
+      { "from": "bus", "to": "bus" }
+    ],
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development",
+      "executableName": "fluxworkbench"
+    }
   }
 }
