@@ -176,7 +176,8 @@ export function App() {
       <Footer state={state} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
       {ctxMenu && <ContextMenu ctxMenu={ctxMenu} closeCtx={closeCtx} refreshTree={refreshTree}
         doDelete={doDelete} copyPath={copyPath} copyRelPath={copyRelPath} addToChat={addToChat}
-        setCreating={setCreating} projectPath={projectPath} />}
+        setCreating={setCreating} projectPath={projectPath}
+        setRenaming={setRenaming} />}
     </div>
   );
 }
@@ -212,7 +213,7 @@ function TreeView({ nodes, depth, activeFile, toggleFolder, openFile, onContextM
 }
 
 // ═══ Context Menu ═══
-function ContextMenu({ ctxMenu, closeCtx, refreshTree, doDelete, copyPath, copyRelPath, addToChat, setCreating, projectPath }: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+function ContextMenu({ ctxMenu, closeCtx, refreshTree, doDelete, copyPath, copyRelPath, addToChat, setCreating, projectPath, setRenaming }: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const { x, y, node, isRoot } = ctxMenu;
   const parentPath = node ? (node.isDir ? node.path : node.path.substring(0, node.path.lastIndexOf("/"))) : projectPath;
   return (
@@ -232,7 +233,7 @@ function ContextMenu({ ctxMenu, closeCtx, refreshTree, doDelete, copyPath, copyR
           <div className="ctx-sep" />
           <div className="ctx-item disabled">✂️ Cut <span className="ctx-shortcut">Ctrl+X</span></div>
           <div className="ctx-item disabled">📋 Copy <span className="ctx-shortcut">Ctrl+C</span></div>
-          <div className="ctx-item" onClick={() => { /* rename handled by parent */ closeCtx(); }}>✏️ Rename <span className="ctx-shortcut">F2</span></div>
+          <div className="ctx-item" onClick={() => { setRenaming({ node, newName: node.name }); closeCtx(); }}>✏️ Rename <span className="ctx-shortcut">F2</span></div>
           <div className="ctx-item" onClick={() => doDelete(node)}>🗑️ Delete <span className="ctx-shortcut">Del</span></div>
           <div className="ctx-sep" />
           <div className="ctx-item disabled">🧪 Run Test</div>
