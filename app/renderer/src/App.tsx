@@ -172,7 +172,8 @@ export function App() {
       <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
         fileContent={fileContent} activeFile={activeFile} saveFile={saveFile} state={state} />
       <div className="resize-bar resize-r" onMouseDown={startDrag("right")} />
-      <RightPanel events={events} state={state} fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild} />
+      <RightPanel events={events} state={state} fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild}
+        rawEvents={events} />
       <Footer state={state} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
       {ctxMenu && <ContextMenu ctxMenu={ctxMenu} closeCtx={closeCtx} refreshTree={refreshTree}
         doDelete={doDelete} copyPath={copyPath} copyRelPath={copyRelPath} addToChat={addToChat}
@@ -374,11 +375,113 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
 
 // ═══ Right Panel ═══
 function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  const { events, state, fluxAssets, building, buildResult, doBuild } = props;
+  const { events, state, fluxAssets, building, buildResult, doBuild, rawEvents } = props;
   const ocdEvents = events.filter((e: FluxEvent) => e.topic === "openocd.event").slice(-3);
   const assets = events.filter((e: FluxEvent) => e.topic === "asset.committed");
+
+  // ── Infrastructure Core visualization data ──
+  const topics = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of rawEvents) { counts[e.topic] = (counts[e.topic] || 0) + 1; }
+    return counts;
+  }, [rawEvents]);
+  const maxTopic = Math.max(1, ...Object.values(topics));
+  const priorityBands = [
+    { name: "alarm", level: 90, color: "#ff4444", count: (topics["alarm.critical"] || 0) + (topics["alarm.policy-violation"] || 0) },
+    { name: "device", level: 70, color: "#ff8800", count: (topics["device.attached"] || 0) + (topics["openocd.event"] || 0) },
+    { name: "build", level: 30, color: "#002FA7", count: (topics["build.progress"] || 0) },
+    { name: "agent", level: 30, color: "#5B7BFF", count: (topics["agent.event"] || 0) + (topics["cmd.chat"] || 0) },
+    { name: "asset", level: 30, color: "#00aa44", count: (topics["asset.committed"] || 0) + (topics["workflow.published"] || 0) },
+  ];
+  const flowSteps = state.workflow?.steps || [];
+  const topicFlow = rawEvents.slice(-8).reverse();
+
   return (
     <aside className="right-panel">
+      {/* ═══ Infrastructure Core (实时可视化) ═══ */}
+      <div className="rp-section infra-viz">
+        <div className="rp-h">⚡ Infrastructure Core</div>
+
+        {/* 3×2 Scheduler — priority bands as live bars */}
+        <div className="infra-block">
+          <div className="infra-label">3×2 Scheduler · Priority Bands</div>
+          <div className="priority-bars">
+            {priorityBands.map((b) => (
+              <div key={b.name} className="pbar-row">
+                <div className="pbar-name" style={{ color: b.color }}>{b.level}</div>
+                <div className="pbar-track">
+                  <div className="pbar-fill" style={{ width: `${Math.max(2, (b.count / maxTopic) * 100)}%`, background: b.color }} />
+                  <span className="pbar-text">{b.name} ({b.count})</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* uORB Bus — live topic flow */}
+        <div className="infra-block">
+          <div className="infra-label">uORB Bus · Live Topic Flow</div>
+          <div className="topic-flow">
+            {topicFlow.length === 0 ? (
+              <div className="empty-hint" style={{ padding: "4px 0" }}>waiting…</div>
+            ) : topicFlow.map((e: FluxEvent, i: number) => (
+              <div key={i} className="topic-flow-item" style={{ opacity: 1 - i * 0.1 }}>
+                <span className="tf-dot" style={{ background: topicColor(e.topic) }} />
+                <span className="tf-topic">{e.topic}</span>
+                <span className="tf-src">{e.source}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Capability — status badges */}
+        <div className="infra-block">
+          <div className="infra-label">Capability Auth</div>
+          <div className="cap-badges">
+            <span className="cap-badge on">ed25519 ✓</span>
+            <span className="cap-badge on">openocd-task</span>
+            <span className="cap-badge on">brain-agent</span>
+            <span className="cap-badge on">policy-gate</span>
+          </div>
+        </div>
+
+        {/* Supervisor — process status */}
+        <div className="infra-block">
+          <div className="infra-label">Supervisor · Processes</div>
+          <div className="proc-grid">
+            <div className={`proc-tile ${state.brainReady ? "alive" : ""}`}>
+              <div className={`proc-dot ${state.brainReady ? "on" : ""}`} />
+              <span>brain</span>
+              <span className="proc-pid">{state.brainReady ? "●" : "…"}</span>
+            </div>
+            <div className={`proc-tile ${state.deviceAttached ? "alive" : ""}`}>
+              <div className={`proc-dot ${state.deviceAttached ? "on" : ""}`} />
+              <span>openocd</span>
+              <span className="proc-pid">{state.deviceAttached ? (state.real ? "●" : "○") : "…"}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Flow axis — workflow DAG visual */}
+        {flowSteps.length > 0 && (
+          <div className="infra-block">
+            <div className="infra-label">Flow Axis · Workflow DAG</div>
+            <div className="dag-visual">
+              {flowSteps.map((s: { name: string; op: string }, i: number) => (
+                <div key={s.name} className="dag-node-wrap">
+                  <div className={`dag-node ${i < 2 ? "done" : ""}`}>
+                    <span className="dag-num">{i + 1}</span>
+                    <span className="dag-name">{s.name}</span>
+                  </div>
+                  {i < flowSteps.length - 1 && <div className="dag-arrow">→</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Flux Insight Loop */}
       <div className="rp-section">
         <div className="rp-h">Flux Insight Loop</div>
         <div className="kpi-row">
@@ -450,6 +553,17 @@ function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-expli
 }
 
 // ── helpers ──
+function topicColor(topic: string): string {
+  if (topic.startsWith("alarm")) return "#ff4444";
+  if (topic.startsWith("device")) return "#ff8800";
+  if (topic.startsWith("openocd")) return "#ff8800";
+  if (topic.startsWith("build")) return "#002FA7";
+  if (topic.startsWith("agent")) return "#5B7BFF";
+  if (topic.startsWith("asset")) return "#00aa44";
+  if (topic.startsWith("workflow")) return "#9c27b0";
+  if (topic.startsWith("cmd")) return "#737373";
+  return "#737373";
+}
 function iconForExt(ext: string): string {
   const m: Record<string,string> = { py:"🐍", ts:"🟦", tsx:"⚛️", c:"🔧", h:"🔧", js:"🟨", json:"📄", md:"📖", yaml:"📄", yml:"📄", proto:"📄", sh:"📜" };
   return m[ext?.toLowerCase()] || "📄";

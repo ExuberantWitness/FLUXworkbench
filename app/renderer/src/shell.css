@@ -114,3 +114,46 @@ html,body,#root{height:100%;background:var(--paper);color:var(--ink);font-family
 
 /* ── misc ── */
 .empty-hint{color:var(--grey-3);font-size:11px;padding:8px 0;font-style:italic}
+
+/* ═══ Infrastructure Core 可视化 ═══ */
+.infra-viz{padding:12px}
+.infra-block{margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.infra-block:last-child{border-bottom:none}
+.infra-label{font-size:9px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--grey-3);margin-bottom:6px;font-weight:500}
+
+/* priority bars */
+.priority-bars{display:flex;flex-direction:column;gap:3px}
+.pbar-row{display:flex;align-items:center;gap:4px}
+.pbar-name{font-family:var(--mono);font-size:9px;font-weight:700;min-width:22px;text-align:right}
+.pbar-track{flex:1;height:18px;background:var(--grey-1);border-radius:2px;position:relative;overflow:hidden}
+.pbar-fill{height:100%;border-radius:2px;transition:width .3s ease;min-width:2px}
+.pbar-text{position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:9px;font-family:var(--mono);color:#fff;text-shadow:0 0 3px rgba(0,0,0,.4);font-weight:500;white-space:nowrap}
+
+/* topic flow */
+.topic-flow{display:flex;flex-direction:column;gap:2px;max-height:120px;overflow-y:auto}
+.topic-flow-item{display:flex;align-items:center;gap:4px;font-size:10px;font-family:var(--mono);padding:2px 0;transition:opacity .3s}
+.tf-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.tf-topic{color:var(--ink);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-src{color:var(--grey-3);font-size:9px;margin-left:auto;flex-shrink:0}
+
+/* capability badges */
+.cap-badges{display:flex;flex-wrap:wrap;gap:3px}
+.cap-badge{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:2px;border:1px solid var(--grey-2);color:var(--grey-3)}
+.cap-badge.on{background:rgba(0,47,167,.06);border-color:var(--accent);color:var(--accent)}
+
+/* supervisor process tiles */
+.proc-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.proc-tile{display:flex;align-items:center;gap:4px;padding:4px 8px;background:var(--grey-1);border-radius:3px;font-size:10px;font-family:var(--mono);color:var(--grey-3);border:1px solid transparent}
+.proc-tile.alive{border-color:var(--accent)}
+.proc-dot{width:7px;height:7px;border-radius:50%;background:var(--grey-2);flex-shrink:0}
+.proc-dot.on{background:var(--accent);box-shadow:0 0 4px var(--accent)}
+.proc-pid{margin-left:auto;font-size:9px}
+
+/* DAG visual */
+.dag-visual{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+.dag-node-wrap{display:flex;align-items:center;gap:2px}
+.dag-node{display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:3px;background:var(--grey-1);border:1px solid var(--grey-2);font-size:9px;font-family:var(--mono);color:var(--grey-3)}
+.dag-node.done{background:rgba(0,47,167,.06);border-color:var(--accent);color:var(--accent)}
+.dag-num{font-weight:700;font-size:8px}
+.dag-name{font-size:9px}
+.dag-arrow{color:var(--grey-2);font-size:10px;margin:0 1px}
