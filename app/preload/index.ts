@@ -45,6 +45,18 @@ const api = {
   writeFile(path: string, content: string): Promise<void> {
     return ipcRenderer.invoke("flux:writeFile", path, content);
   },
+  createFile(path: string): Promise<void> {
+    return ipcRenderer.invoke("flux:createFile", path);
+  },
+  createDir(path: string): Promise<void> {
+    return ipcRenderer.invoke("flux:createDir", path);
+  },
+  deleteFile(path: string): Promise<void> {
+    return ipcRenderer.invoke("flux:deleteFile", path);
+  },
+  renameFile(oldPath: string, newPath: string): Promise<void> {
+    return ipcRenderer.invoke("flux:renameFile", oldPath, newPath);
+  },
   openFolder(): Promise<string | null> {
     return ipcRenderer.invoke("flux:openFolder");
   },

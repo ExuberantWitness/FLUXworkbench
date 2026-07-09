@@ -1,29 +1,25 @@
-// Flux Studio — functional UI for user testing
-// 三栏：LeftSidebar（Session/Memory/Explorer + Customizations）| ChatArea（中央）| RightPanel
-import { useEffect, useMemo, useState, useCallback } from "react";
+// Flux Studio — VScode-like Explorer + drag resize + cc-switch providers + clawhub
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 
 interface FluxEvent { source: string; kind: string; topic: string; data: Record<string, unknown>; trace_id: string }
 interface ChatMsg { role: "user" | "agent"; text: string; codeBlock?: string }
 interface DirEntry { name: string; isDir: boolean; ext: string }
 interface CondaEnv { name: string; path: string }
+interface TreeNode { name: string; path: string; isDir: boolean; ext: string; children?: TreeNode[]; loaded?: boolean; expanded?: boolean }
 
-declare global {
-  interface Window { flux: any; } // eslint-disable-line @typescript-eslint/no-explicit-any
-}
+declare global { interface Window { flux: any } } // eslint-disable-line @typescript-eslint/no-explicit-any
 
 type LeftTab = "session" | "memory" | "explorer";
 const DEFAULT_PROJECT = "/home/exuber/hpm_sdk/samples/hello_world";
 
-// ── File tree node ──
-interface TreeNode {
-  name: string;
-  path: string;
-  isDir: boolean;
-  ext: string;
-  children?: TreeNode[];
-  loaded?: boolean;
-  expanded?: boolean;
-}
+// ── cc-switch style provider presets ──
+const PROVIDER_PRESETS: Record<string, { endpoint: string; model: string; label: string }> = {
+  vllm: { endpoint: "http://127.0.0.1:8000", model: "openbmb/MiniCPM-V-4.6", label: "Local vLLM" },
+  openai: { endpoint: "https://api.openai.com/v1", model: "gpt-4o", label: "OpenAI" },
+  anthropic: { endpoint: "https://api.anthropic.com", model: "claude-sonnet-5-20250929", label: "Anthropic Claude" },
+  deepseek: { endpoint: "https://api.deepseek.com/v1", model: "deepseek-chat", label: "DeepSeek" },
+  custom: { endpoint: "", model: "", label: "Custom" },
+};
 
 export function App() {
   const [events, setEvents] = useState<FluxEvent[]>([]);
@@ -38,20 +34,18 @@ export function App() {
   const [condaEnvs, setCondaEnvs] = useState<CondaEnv[]>([]);
   const [condaActive, setCondaActive] = useState("base");
   const [condaDropdown, setCondaDropdown] = useState(false);
-  const [customOpen, setCustomOpen] = useState<string | null>("overview");
-  const [sessionList, setSessionList] = useState<{ id: string; msgCount: number }[]>([
-    { id: "current", msgCount: 0 },
-  ]);
-  const [activeSession, setActiveSession] = useState("current");
-  const [apiConfig, setApiConfig] = useState({
-    provider: "vllm" as "vllm" | "openai" | "anthropic",
-    endpoint: "http://127.0.0.1:8000",
-    apiKey: "",
-    model: "openbmb/MiniCPM-V-4.6",
-  });
-  const [fluxAssets, setFluxAssets] = useState<{ id: string; path: string; kind: string; records: number }[]>([]);
+  const [customOpen, setCustomOpen] = useState<string | null>("api");
+  const [apiConfig, setApiConfig] = useState({ provider: "vllm", endpoint: "http://127.0.0.1:8000", apiKey: "", model: "openbmb/MiniCPM-V-4.6" });
+  const [fluxAssets, setFluxAssets] = useState<{id:string;path:string;kind:string;records:number}[]>([]);
   const [building, setBuilding] = useState(false);
-  const [buildResult, setBuildResult] = useState<string>("");
+  const [buildResult, setBuildResult] = useState("");
+  // ── context menu state ──
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: TreeNode | null; isRoot: boolean } | null>(null);
+  const [renaming, setRenaming] = useState<{ node: TreeNode; newName: string } | null>(null);
+  const [creating, setCreating] = useState<{ parentPath: string; name: string; isDir: boolean } | null>(null);
+  // ── drag resize ──
+  const [leftWidth, setLeftWidth] = useState(240);
+  const [rightWidth, setRightWidth] = useState(300);
 
   useEffect(() => {
     const off = window.flux?.onEvent?.((e: FluxEvent) => {
@@ -60,172 +54,156 @@ export function App() {
         const reply = String(e.data?.["reply"] ?? "(no reply)");
         const m = reply.match(/```(\w+)?\n([\s\S]*?)```/);
         setChatMsgs((p) => [...p.slice(-100), { role: "agent", text: reply, codeBlock: m?.[2] }]);
-        setSessionList((p) => p.map((s) => s.id === activeSession ? { ...s, msgCount: p.length } : s));
       }
     });
     return () => off?.();
-  }, [activeSession]);
+  }, []);
 
-  // Load root file tree
   const loadDir = useCallback(async (dirPath: string): Promise<TreeNode[]> => {
     try {
       const entries: DirEntry[] = await window.flux?.readDir?.(dirPath);
-      return entries.map((e) => ({
-        name: e.name,
-        path: `${dirPath}/${e.name}`,
-        isDir: e.isDir,
-        ext: e.ext,
-        children: e.isDir ? [] : undefined,
-        loaded: !e.isDir,
-        expanded: false,
-      }));
+      return entries.map((e) => ({ name: e.name, path: `${dirPath}/${e.name}`, isDir: e.isDir, ext: e.ext, children: e.isDir ? [] : undefined, loaded: !e.isDir, expanded: false }));
     } catch { return []; }
   }, []);
 
-  useEffect(() => {
-    void loadDir(projectPath).then(setTreeRoot);
-  }, [projectPath, loadDir]);
-
-  useEffect(() => {
-    void window.flux?.condaList?.().then((envs: CondaEnv[]) => {
-      setCondaEnvs(envs);
-      const base = envs.find((e) => e.name === "base");
-      if (base) setCondaActive("base");
-    }).catch(() => void 0);
-  }, []);
+  useEffect(() => { void loadDir(projectPath).then(setTreeRoot); }, [projectPath, loadDir]);
+  useEffect(() => { void window.flux?.condaList?.().then((e: CondaEnv[]) => { setCondaEnvs(e); }).catch(() => void 0); }, []);
+  useEffect(() => { void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0); }, [events.filter(e=>e.topic==="asset.committed").length]);
 
   const state = useMemo(() => deriveState(events), [events]);
 
-  // ── Folder expand/collapse ──
-  const toggleFolder = async (node: TreeNode): Promise<void> => {
+  // ── tree operations ──
+  const refreshTree = useCallback(async () => { setTreeRoot(await loadDir(projectPath)); }, [projectPath, loadDir]);
+  const toggleFolder = async (node: TreeNode) => {
     if (!node.isDir) return;
-    if (!node.loaded) {
-      node.children = await loadDir(node.path);
-      node.loaded = true;
-    }
-    node.expanded = !node.expanded;
-    setTreeRoot([...treeRoot]);
+    if (!node.loaded) { node.children = await loadDir(node.path); node.loaded = true; }
+    node.expanded = !node.expanded; setTreeRoot([...treeRoot]);
   };
-
-  // ── Open file ──
-  const openFile = async (node: TreeNode): Promise<void> => {
+  const openFile = async (node: TreeNode) => {
     if (node.isDir) return;
-    setActiveFile(node.name);
-    setActiveFilePath(node.path);
+    setActiveFile(node.name); setActiveFilePath(node.path);
+    try { setFileContent(await window.flux?.readFile?.(node.path)); } catch { setFileContent("(cannot read)"); }
+  };
+  const saveFile = async (content: string) => { if (activeFilePath) await window.flux?.writeFile?.(activeFilePath, content); };
+
+  // ── context menu actions ──
+  const onContextMenu = (e: React.MouseEvent, node: TreeNode | null) => {
+    e.preventDefault(); e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, node, isRoot: !node });
+  };
+  const closeCtx = () => setCtxMenu(null);
+
+  const doCreate = async (isDir: boolean) => {
+    if (!creating) return;
+    const fullPath = `${creating.parentPath}/${creating.name}`;
     try {
-      const content: string = await window.flux?.readFile?.(node.path);
-      setFileContent(content);
-    } catch { setFileContent("(cannot read)"); }
+      if (isDir) await window.flux?.createDir?.(fullPath);
+      else await window.flux?.createFile?.(fullPath);
+      setCreating(null); await refreshTree();
+    } catch (e) { console.error(e); setCreating(null); }
+  };
+  const doRename = async () => {
+    if (!renaming) return;
+    const dir = renaming.node.path.substring(0, renaming.node.path.lastIndexOf("/"));
+    await window.flux?.renameFile?.(renaming.node.path, `${dir}/${renaming.newName}`);
+    setRenaming(null); await refreshTree();
+  };
+  const doDelete = async (node: TreeNode) => {
+    await window.flux?.deleteFile?.(node.path); await refreshTree(); closeCtx();
+  };
+  const copyPath = (node: TreeNode) => {
+    navigator.clipboard?.writeText(node.path); closeCtx();
+  };
+  const copyRelPath = (node: TreeNode) => {
+    navigator.clipboard?.writeText(node.path.replace(projectPath + "/", "")); closeCtx();
+  };
+  const addToChat = (node: TreeNode) => {
+    setChatMsgs((p) => [...p, { role: "user", text: `[add file: ${node.name}]` }]);
+    void openFile(node); closeCtx();
   };
 
-  // ── Save file ──
-  const saveFile = async (content: string): Promise<void> => {
-    if (!activeFilePath) return;
-    await window.flux?.writeFile?.(activeFilePath, content);
-  };
-
-  // ── Chat ──
-  const sendChat = (): void => {
-    const text = chatInput.trim();
-    if (!text) return;
-    setChatMsgs((p) => [...p, { role: "user", text }]);
-    setChatInput("");
+  // ── chat ──
+  const sendChat = () => {
+    const text = chatInput.trim(); if (!text) return;
+    setChatMsgs((p) => [...p, { role: "user", text }]); setChatInput("");
     void window.flux?.sendChat?.(text);
   };
-
-  // ── New session ──
-  const newSession = (): void => {
-    const id = `session-${Date.now()}`;
-    setSessionList((p) => [...p, { id, msgCount: 0 }]);
-    setActiveSession(id);
-    setChatMsgs([]);
-    setEvents([]);
+  // ── provider switch ──
+  const switchProvider = (provider: string) => {
+    const preset = PROVIDER_PRESETS[provider] ?? PROVIDER_PRESETS.custom!;
+    const newConfig = { provider, endpoint: preset!.endpoint, model: preset!.model, apiKey: apiConfig.apiKey };
+    setApiConfig(newConfig);
+    void window.flux?.sendSetApi?.(newConfig);
   };
-
-  // ── Build (cross-compile) ──
-  const doBuild = async (): Promise<void> => {
-    setBuilding(true);
-    setBuildResult("Building…");
-    try {
-      const res = await window.flux?.build?.(projectPath);
-      if (res?.ok) {
-        setBuildResult(`✅ ${res.elf}`);
-      } else {
-        setBuildResult(`❌ ${res?.error?.slice(0, 200) ?? "unknown"}`);
-      }
-    } catch (e) {
-      setBuildResult(`❌ ${e}`);
-    }
-    setBuilding(false);
+  // ── build ──
+  const doBuild = async () => {
+    setBuilding(true); setBuildResult("Building…");
+    try { const res = await window.flux?.build?.(projectPath); setBuildResult(res?.ok ? `✅ ${res.elf}` : `❌ ${res?.error?.slice(0,200)}`); }
+    catch (e) { setBuildResult(`❌ ${e}`); } setBuilding(false);
   };
-
-  // ── Load .flux assets on mount + when asset.committed fires ──
+  // ── drag resize ──
+  const startDrag = (side: "left" | "right") => (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startL = leftWidth; const startR = rightWidth;
+    const onMove = (ev: MouseEvent) => {
+      if (side === "left") setLeftWidth(Math.max(150, Math.min(500, startL + ev.clientX - startX)));
+      else setRightWidth(Math.max(150, Math.min(500, startR - (ev.clientX - startX))));
+    };
+    const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+    document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp);
+  };
+  useEffect(() => { const h = () => closeCtx(); window.addEventListener("click", h); return () => window.removeEventListener("click", h); }, []);
+  // auto code insert
   useEffect(() => {
-    void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0);
-  }, [state.assets]);
-
-  // ── Auto-insert code from agent chat ──
-  useEffect(() => {
-    const lastMsg = chatMsgs[chatMsgs.length - 1];
-    if (lastMsg?.role === "agent" && lastMsg.codeBlock) {
-      setFileContent(lastMsg.codeBlock);
-      setActiveFile("agent_generated.py");
-      setActiveFilePath("");
-    }
+    const last = chatMsgs[chatMsgs.length - 1];
+    if (last?.role === "agent" && last.codeBlock) { setFileContent(last.codeBlock); setActiveFile("agent_generated.py"); setActiveFilePath(""); }
   }, [chatMsgs]);
 
   return (
-    <div className="shell">
-      <LeftSidebar
-        tab={leftTab} setTab={setLeftTab}
-        events={events} state={state}
-        treeRoot={treeRoot} toggleFolder={toggleFolder}
-        activeFile={activeFile} openFile={openFile}
-        customOpen={customOpen} setCustomOpen={setCustomOpen}
-        sessionList={sessionList} activeSession={activeSession}
-        setActiveSession={setActiveSession} newSession={newSession}
-        apiConfig={apiConfig} setApiConfig={setApiConfig}
-        projectPath={projectPath} setProjectPath={setProjectPath}
-      />
-      <ChatArea
-        msgs={chatMsgs} input={chatInput} setInput={setChatInput}
-        sendChat={sendChat} fileContent={fileContent} activeFile={activeFile}
-        saveFile={saveFile} state={state}
-      />
-      <RightPanel
-        events={events} state={state}
-        fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild}
-      />
-      <Footer
-        state={state}
-        condaEnvs={condaEnvs} condaActive={condaActive}
-        setCondaActive={setCondaActive} condaDropdown={condaDropdown}
-        setCondaDropdown={setCondaDropdown}
-      />
+    <div className="shell" style={{ ["--lw" as string]: `${leftWidth}px`, ["--rw" as string]: `${rightWidth}px` }}>
+      <LeftSidebar tab={leftTab} setTab={setLeftTab} events={events} state={state}
+        treeRoot={treeRoot} toggleFolder={toggleFolder} activeFile={activeFile} openFile={openFile}
+        customOpen={customOpen} setCustomOpen={setCustomOpen} projectPath={projectPath} setProjectPath={setProjectPath}
+        onContextMenu={onContextMenu} renaming={renaming} setRenaming={setRenaming} doRename={doRename}
+        creating={creating} setCreating={setCreating} doCreate={doCreate} refreshTree={refreshTree}
+        apiConfig={apiConfig} setApiConfig={setApiConfig} switchProvider={switchProvider} />
+      <div className="resize-bar resize-l" onMouseDown={startDrag("left")} />
+      <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
+        fileContent={fileContent} activeFile={activeFile} saveFile={saveFile} state={state} />
+      <div className="resize-bar resize-r" onMouseDown={startDrag("right")} />
+      <RightPanel events={events} state={state} fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild} />
+      <Footer state={state} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
+      {ctxMenu && <ContextMenu ctxMenu={ctxMenu} closeCtx={closeCtx} refreshTree={refreshTree}
+        doDelete={doDelete} copyPath={copyPath} copyRelPath={copyRelPath} addToChat={addToChat}
+        setCreating={setCreating} projectPath={projectPath} />}
     </div>
   );
 }
 
-// ═══ Tree renderer ═══
-function TreeView({ nodes, depth, activeFile, toggleFolder, openFile }: {
-  nodes: TreeNode[]; depth: number; activeFile: string;
-  toggleFolder: (n: TreeNode) => void; openFile: (n: TreeNode) => void;
-}) {
+// ═══ Tree View with context menu ═══
+function TreeView({ nodes, depth, activeFile, toggleFolder, openFile, onContextMenu, renaming, setRenaming, doRename }: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   return (
     <ul className="ft-list" style={{ marginLeft: depth > 0 ? 8 : 0 }}>
-      {nodes.map((node) => (
+      {nodes.map((node: TreeNode) => (
         <li key={node.path}>
-          <div
-            className={`ft-item ${activeFile === node.name ? "active" : ""}`}
-            style={{ paddingLeft: depth * 8 }}
-            onClick={() => node.isDir ? toggleFolder(node) : openFile(node)}
-          >
-            <span>{node.isDir ? (node.expanded ? "📂" : "📁") : iconForExt(node.ext)}</span>
-            {node.name}
-          </div>
+          {renaming?.node === node ? (
+            <input className="input-inline" autoFocus value={renaming.newName}
+              onChange={(e) => setRenaming({ ...renaming, newName: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") doRename(); if (e.key === "Escape") setRenaming(null); }}
+              onBlur={doRename} />
+          ) : (
+            <div className={`ft-item ${activeFile === node.name ? "active" : ""}`} style={{ paddingLeft: depth * 8 }}
+              onClick={() => node.isDir ? toggleFolder(node) : openFile(node)}
+              onContextMenu={(e) => onContextMenu(e, node)}>
+              <span>{node.isDir ? (node.expanded ? "📂" : "📁") : iconForExt(node.ext)}</span>
+              {node.name}
+            </div>
+          )}
           {node.isDir && node.expanded && node.children && (
             <TreeView nodes={node.children} depth={depth + 1} activeFile={activeFile}
-              toggleFolder={toggleFolder} openFile={openFile} />
+              toggleFolder={toggleFolder} openFile={openFile} onContextMenu={onContextMenu}
+              renaming={renaming} setRenaming={setRenaming} doRename={doRename} />
           )}
         </li>
       ))}
@@ -233,26 +211,43 @@ function TreeView({ nodes, depth, activeFile, toggleFolder, openFile }: {
   );
 }
 
+// ═══ Context Menu ═══
+function ContextMenu({ ctxMenu, closeCtx, refreshTree, doDelete, copyPath, copyRelPath, addToChat, setCreating, projectPath }: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { x, y, node, isRoot } = ctxMenu;
+  const parentPath = node ? (node.isDir ? node.path : node.path.substring(0, node.path.lastIndexOf("/"))) : projectPath;
+  return (
+    <div className="ctx-menu" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
+      {isRoot || node?.isDir ? (
+        <>
+          <div className="ctx-item" onClick={() => { setCreating({ parentPath, name: "", isDir: false }); closeCtx(); }}>📄 New File</div>
+          <div className="ctx-item" onClick={() => { setCreating({ parentPath, name: "", isDir: true }); closeCtx(); }}>📁 New Folder</div>
+          <div className="ctx-sep" />
+        </>
+      ) : null}
+      {!isRoot && node && (
+        <>
+          <div className="ctx-item" onClick={() => { addToChat(node); }}>💬 Add File to Chat</div>
+          <div className="ctx-item" onClick={() => copyPath(node)}>📋 Copy Path</div>
+          <div className="ctx-item" onClick={() => copyRelPath(node)}>📋 Copy Relative Path</div>
+          <div className="ctx-sep" />
+          <div className="ctx-item disabled">✂️ Cut <span className="ctx-shortcut">Ctrl+X</span></div>
+          <div className="ctx-item disabled">📋 Copy <span className="ctx-shortcut">Ctrl+C</span></div>
+          <div className="ctx-item" onClick={() => { /* rename handled by parent */ closeCtx(); }}>✏️ Rename <span className="ctx-shortcut">F2</span></div>
+          <div className="ctx-item" onClick={() => doDelete(node)}>🗑️ Delete <span className="ctx-shortcut">Del</span></div>
+          <div className="ctx-sep" />
+          <div className="ctx-item disabled">🧪 Run Test</div>
+          <div className="ctx-item disabled">🐛 Debug Test</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ═══ Left Sidebar ═══
 function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const { tab, setTab, events, state, treeRoot, toggleFolder, activeFile, openFile,
-    customOpen, setCustomOpen, sessionList, activeSession, setActiveSession, newSession,
-    apiConfig, setApiConfig, projectPath, setProjectPath } = props;
-  const customSections = [
-    { id: "overview", label: "Overview", items: [`kernel: ${state.brainReady ? "ready" : "..."}`, `device: ${state.real ? "REAL" : "mock"}`] },
-    { id: "workflow", label: "Workflow", items: state.workflow?.steps.map((s: any) => `${s.name}: ${s.op}`) ?? ["(none)"] },
-    { id: "agents", label: "Agents", items: ["openocd-task (C)", "brain-agent (Python)"] },
-    { id: "mcp", label: "MCP Servers", items: ["(v2) dimos", "(v2) scp"] },
-    { id: "skills", label: "Skills", items: ["characterize", "codegen", "schematic→netlist"] },
-    { id: "hooks", label: "Hooks", items: ["before-flash", "after-commit"] },
-    { id: "plugins", label: "Plugins", items: ["(v2) PlatformIO", "(v2) probe-rs"] },
-    { id: "tools", label: "Tools", items: ["riscv GCC 13.2", "HPM_SDK", "HPM OpenOCD"] },
-    { id: "api", label: "API Config", items: [
-      `Provider: ${apiConfig.provider}`,
-      `Endpoint: ${apiConfig.endpoint}`,
-      `Model: ${apiConfig.model}`,
-    ]},
-  ];
+    customOpen, setCustomOpen, projectPath, setProjectPath, onContextMenu, renaming, setRenaming, doRename,
+    creating, setCreating, doCreate, refreshTree, apiConfig, setApiConfig, switchProvider } = props;
   return (
     <aside className="left-sidebar">
       <div className="ls-tabs">
@@ -263,68 +258,80 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
       <div className="ls-content">
         {tab === "session" && (
           <div>
-            <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 9, fontFamily: "var(--mono)", color: "var(--grey-3)", textTransform: "uppercase" }}>Sessions</span>
-              <button className="ls-new-btn" onClick={newSession}>+ New</button>
-            </div>
-            {sessionList.map((s: { id: string; msgCount: number }) => (
-              <div key={s.id}
-                className={`sess-item ${activeSession === s.id ? "active" : ""}`}
-                onClick={() => setActiveSession(s.id)}>
-                {s.id === "current" ? "▶ " : ""}{s.id} ({s.msgCount})
-              </div>
-            ))}
+            <button className="ls-new-btn" style={{ marginBottom: 8 }}>+ New Session</button>
+            <div className="sess-item active">▶ Current ({events.length} events)</div>
           </div>
         )}
-        {tab === "memory" && <MemoryPanel events={events} />}
-        {tab === "explorer" && (
+        {tab === "memory" && (
           <div>
-            <div style={{ marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 9, fontFamily: "var(--mono)", color: "var(--grey-3)", textTransform: "uppercase" }}>{projectPath.split("/").pop()}</span>
-              <button className="ls-new-btn" onClick={async () => {
-                const p = await window.flux?.openFolder?.();
-                if (p) setProjectPath(p);
-              }}>Open</button>
+            <div className="mem-item"><span className="mem-k">device.attached</span> ×{events.filter((e:FluxEvent)=>e.topic==="device.attached").length}</div>
+            <div className="mem-item"><span className="mem-k">openocd.event</span> ×{events.filter((e:FluxEvent)=>e.topic==="openocd.event").length}</div>
+            <div className="mem-item"><span className="mem-k">asset.committed</span> ×{events.filter((e:FluxEvent)=>e.topic==="asset.committed").length}</div>
+          </div>
+        )}
+        {tab === "explorer" && (
+          <div onContextMenu={(e) => onContextMenu(e, null)}>
+            <div className="ft-toolbar">
+              <span style={{ fontSize: 9, fontFamily: "var(--mono)", color: "var(--grey-3)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectPath.split("/").pop()}</span>
+              <button className="ft-btn" onClick={async () => { const p = await window.flux?.openFolder?.(); if (p) { setProjectPath(p); } }}>📂</button>
+              <button className="ft-btn" onClick={() => refreshTree()}>↻</button>
             </div>
-            {treeRoot.length === 0 ? (
-              <div className="empty-hint">Loading…</div>
-            ) : (
-              <TreeView nodes={treeRoot} depth={0} activeFile={activeFile}
-                toggleFolder={toggleFolder} openFile={openFile} />
+            {creating && (
+              <div style={{ marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: "var(--grey-3)" }}>{creating.isDir ? "📁" : "📄"} </span>
+                <input className="input-inline" autoFocus placeholder={creating.isDir ? "folder name" : "file name"}
+                  value={creating.name} onChange={(e) => setCreating({ ...creating, name: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") doCreate(creating.isDir); if (e.key === "Escape") setCreating(null); }}
+                  onBlur={() => creating.name && doCreate(creating.isDir)} />
+              </div>
             )}
+            {treeRoot.length === 0 ? <div className="empty-hint">Loading…</div> :
+              <TreeView nodes={treeRoot} depth={0} activeFile={activeFile} toggleFolder={toggleFolder}
+                openFile={openFile} onContextMenu={onContextMenu} renaming={renaming}
+                setRenaming={setRenaming} doRename={doRename} />}
           </div>
         )}
       </div>
       {/* Customizations */}
       <div className="custom-section">
-        {customSections.map((s) => (
-          <div key={s.id}>
-            <div className="custom-h" onClick={() => setCustomOpen(customOpen === s.id ? null : s.id)}>
-              {customOpen === s.id ? "▾" : "▸"} {s.label}
-            </div>
-            {customOpen === s.id && s.items.map((item: string, i: number) => (
-              <div key={i} className="custom-item">
-                <span className={`dot-sm ${i === 0 ? "on" : ""}`} />
-                {item}
+        {/* API Provider (cc-switch style) */}
+        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "api" ? null : "api")}>
+          {customOpen === "api" ? "▾" : "▸"} API Provider
+        </div>
+        {customOpen === "api" && (
+          <div style={{ padding: "4px 8px" }}>
+            {Object.entries(PROVIDER_PRESETS).map(([key, preset]) => (
+              <div key={key} className="custom-item" style={{ cursor: "pointer", fontWeight: apiConfig.provider === key ? 600 : 400, color: apiConfig.provider === key ? "var(--accent)" : "var(--grey-3)" }}
+                onClick={() => switchProvider(key)}>
+                <span className={`dot-sm ${apiConfig.provider === key ? "on" : ""}`} />
+                {preset.label}
               </div>
+            ))}
+            <div style={{ marginTop: 6 }}>
+              <div className="custom-item"><span className="lbl-sm">Endpoint</span><input type="text" value={apiConfig.endpoint} onChange={(e) => setApiConfig({ ...apiConfig, endpoint: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} /></div>
+              <div className="custom-item"><span className="lbl-sm">Model</span><input type="text" value={apiConfig.model} onChange={(e) => setApiConfig({ ...apiConfig, model: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} /></div>
+              <div className="custom-item"><span className="lbl-sm">API Key</span><input type="password" value={apiConfig.apiKey} onChange={(e) => setApiConfig({ ...apiConfig, apiKey: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} placeholder="(optional)" /></div>
+            </div>
+          </div>
+        )}
+        {/* Other customizations */}
+        {[
+          { id: "overview", label: "Overview", items: [`kernel: ${state.brainReady ? "ready" : "..."}`, `device: ${state.real ? "REAL" : "mock"}`] },
+          { id: "workflow", label: "Workflow", items: state.workflow?.steps.map((s:any)=>`${s.name}: ${s.op}`) ?? ["(none)"] },
+          { id: "agents", label: "Agents", items: ["openocd-task", "brain-agent"] },
+          { id: "skills", label: "Skills (ClawhHub)", items: ["characterize", "codegen", "schematic→netlist", "+ Install from ClawhHub"] },
+          { id: "mcp", label: "MCP Servers", items: ["(v2) dimos", "(v2) scp"] },
+          { id: "tools", label: "Tools", items: ["riscv GCC", "HPM_SDK", "HPM OpenOCD"] },
+        ].map((s) => (
+          <div key={s.id}>
+            <div className="custom-h" onClick={() => setCustomOpen(customOpen === s.id ? null : s.id)}>{customOpen === s.id ? "▾" : "▸"} {s.label}</div>
+            {customOpen === s.id && s.items.map((item: string, i: number) => (
+              <div key={i} className="custom-item"><span className={`dot-sm ${i === 0 ? "on" : ""}`} />{item}</div>
             ))}
           </div>
         ))}
       </div>
     </aside>
-  );
-}
-
-function MemoryPanel({ events }: { events: FluxEvent[] }) {
-  return (
-    <div>
-      <div className="mem-item"><span className="mem-k">device.attached</span> ×{events.filter((e) => e.topic === "device.attached").length}</div>
-      <div className="mem-item"><span className="mem-k">openocd.event</span> ×{events.filter((e) => e.topic === "openocd.event").length}</div>
-      <div className="mem-item"><span className="mem-k">asset.committed</span> ×{events.filter((e) => e.topic === "asset.committed").length}</div>
-      <div className="mem-item"><span className="mem-k">alarm</span> ×{events.filter((e) => e.topic.startsWith("alarm")).length}</div>
-      <div className="mem-item"><span className="mem-k">workflow</span> ×{events.filter((e) => e.topic === "workflow.published").length}</div>
-      <div className="mem-item"><span className="mem-k">agent.event</span> ×{events.filter((e) => e.topic === "agent.event").length}</div>
-    </div>
   );
 }
 
@@ -338,42 +345,26 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
           <div className="chat-code-block">
             <div style={{ fontSize: 10, color: "#888", marginBottom: 4 }}>📄 {activeFile}</div>
             <textarea defaultValue={fileContent.slice(0, 5000)} rows={Math.min(20, fileContent.split("\n").length)} />
-            <div className="chat-code-actions">
-              <button className="chat-code-btn" onClick={() => saveFile(fileContent)}>Save</button>
-            </div>
+            <div className="chat-code-actions"><button className="chat-code-btn" onClick={() => saveFile(fileContent)}>Save</button></div>
           </div>
         )}
         {msgs.length === 0 && !activeFile && (
           <div className="chat-empty">
-            <div style={{ fontSize: 28, fontWeight: 200, letterSpacing: "-.02em", marginBottom: 8 }}>Flux Studio</div>
-            <div style={{ fontSize: 14 }}>
-              {state.brainReady ? "Ask MiniCPM-V anything about your hardware project." : "Connecting to brain…"}
-            </div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>Or open a file from Explorer on the left.</div>
+            <div style={{ fontSize: 28, fontWeight: 200, marginBottom: 8 }}>Flux Studio</div>
+            <div style={{ fontSize: 14 }}>{state.brainReady ? "Ask MiniCPM-V anything." : "Connecting…"}</div>
           </div>
         )}
         {msgs.map((m: ChatMsg, i: number) => (
           <div key={i} className={`chat-msg chat-${m.role}`}>
             <span className="chat-role">{m.role === "user" ? "▸" : "⚡"}</span>
-            <div>
-              <div className="chat-text">{m.text}</div>
-              {m.codeBlock && (
-                <div className="chat-code-block">
-                  <textarea defaultValue={m.codeBlock.slice(0, 5000)} rows={Math.min(15, m.codeBlock.split("\n").length)} />
-                  <div className="chat-code-actions">
-                    <button className="chat-code-btn" onClick={() => saveFile(m.codeBlock!)}>Save to File</button>
-                  </div>
-                </div>
-              )}
+            <div className="chat-text">{m.text}
+              {m.codeBlock && (<div className="chat-code-block"><textarea defaultValue={m.codeBlock.slice(0,5000)} rows={Math.min(15, m.codeBlock.split("\n").length)} /><div className="chat-code-actions"><button className="chat-code-btn" onClick={() => saveFile(m.codeBlock!)}>Save</button></div></div>)}
             </div>
           </div>
         ))}
       </div>
       <div className="chat-input-row">
-        <input className="chat-input" type="text" value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
-          placeholder="Ask MiniCPM-V 4.6…" />
+        <input className="chat-input" type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }} placeholder="Ask MiniCPM-V…" />
         <button className="chat-send" onClick={sendChat}>Send</button>
       </div>
     </main>
@@ -387,66 +378,42 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
   const assets = events.filter((e: FluxEvent) => e.topic === "asset.committed");
   return (
     <aside className="right-panel">
-      {/* Flux Insight Loop — iframe to :8420 dashboard */}
       <div className="rp-section">
         <div className="rp-h">Flux Insight Loop</div>
         <div className="kpi-row">
-          <div className="kpi-cell"><div className="lbl">Research</div><div className="nb accent">{events.filter((e: FluxEvent) => e.topic === "workflow.published").length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Research</div><div className="nb accent">{events.filter((e:FluxEvent)=>e.topic==="workflow.published").length}</div></div>
           <div className="kpi-cell"><div className="lbl">Execute</div><div className="nb">{ocdEvents.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Asset</div><div className="nb accent">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Debug</div><div className="nb">{events.filter((e: FluxEvent) => e.topic === "alarm.critical").length}</div></div>
         </div>
-        <iframe src="http://127.0.0.1:8420" style={{ width: "100%", height: 200, border: "1px solid var(--border)", borderRadius: 3, marginTop: 4 }}
-          title="Flux Insight Dashboard" />
+        <iframe src="http://127.0.0.1:8420" style={{ width: "100%", height: 200, border: "1px solid var(--border)", borderRadius: 3 }} title="Flux Insight" />
       </div>
-      {/* Physical Subagents */}
       <div className="rp-section">
         <div className="rp-h">Physical Subagents</div>
         <div className="rp-card">
-          <div className="rp-meta"><span className={`rp-status ${state.deviceAttached ? "on" : "off"}`} /> C · {state.real ? "REAL" : "MOCK"}</div>
+          <div className="rp-meta"><span className={`rp-status ${state.deviceAttached?"on":"off"}`} /> C · {state.real?"REAL":"MOCK"}</div>
           <div className="rp-title">openocd-task</div>
-          <div className="rp-chips"><span className="rp-chip">halt</span><span className="rp-chip">flash</span><span className="rp-chip">mdw</span><span className="rp-chip">reset</span></div>
+          <div className="rp-chips"><span className="rp-chip">halt</span><span className="rp-chip">flash</span><span className="rp-chip">mdw</span></div>
         </div>
         <div className="rp-card">
-          <div className="rp-meta"><span className={`rp-status ${state.brainReady ? "on" : "off"}`} /> Python · MiniCPM-V</div>
+          <div className="rp-meta"><span className={`rp-status ${state.brainReady?"on":"off"}`} /> Python · {state.brainReady?"ready":"..."}</div>
           <div className="rp-title">brain-agent</div>
-          <div className="rp-chips"><span className="rp-chip">characterize</span><span className="rp-chip">codegen</span><span className="rp-chip">chat</span></div>
         </div>
-        {ocdEvents.map((e: FluxEvent, i: number) => (
-          <div key={i} style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", padding: "2px 0" }}>
-            {String(e.data?.["cmd"] ?? "")} → {String(e.data?.["reply"] ?? "").slice(0, 40)}
-          </div>
-        ))}
       </div>
-      {/* Build (cross-compile) */}
       <div className="rp-section">
         <div className="rp-h">Cross-Compile</div>
-        <button className="chat-send" style={{ width: "100%", marginBottom: 4 }} disabled={building} onClick={doBuild}>
-          {building ? "Building…" : "▶ Build (flash_xip)"}
-        </button>
-        {buildResult && <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", wordBreak: "break-all" }}>{buildResult.slice(0, 200)}</div>}
+        <button className="chat-send" style={{ width: "100%", marginBottom: 4 }} disabled={building} onClick={doBuild}>{building?"Building…":"▶ Build (flash_xip)"}</button>
+        {buildResult && <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", wordBreak: "break-all" }}>{buildResult.slice(0,200)}</div>}
       </div>
-      {/* DevReady Assets — from .flux files */}
       <div className="rp-section">
         <div className="rp-h">DevReady Assets (.flux)</div>
         <div className="kpi-row">
           <div className="kpi-cell"><div className="lbl">Events</div><div className="nb">{assets.length}</div></div>
           <div className="kpi-cell"><div className="lbl">.flux Files</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
         </div>
-        {/* .flux file assets */}
-        {fluxAssets && fluxAssets.length > 0 ? fluxAssets.map((a: { id: string; path: string; kind: string; records: number }, i: number) => (
+        {fluxAssets?.map((a: any, i: number) => (
           <div key={i} className="rp-card">
             <div className="rp-meta">FLUX · {a.kind}</div>
             <div className="rp-title" style={{ fontSize: 11 }}>{a.id}</div>
-            <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{a.records} records · {a.path.split("/").pop()}</div>
-          </div>
-        )) : <div className="empty-hint">no .flux files yet</div>}
-        {/* Event-based assets */}
-        {assets.map((e: FluxEvent, i: number) => (
-          <div key={`e${i}`} className="rp-card">
-            <div className="rp-meta">EVENT · {String(e.data?.["asset_id"] ?? "?")}</div>
-            <div className="rp-title" style={{ fontSize: 11 }}>HPM6E00 bringup</div>
-            <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{(e.data?.["components"] as string[])?.join(" + ") || "profile + driver + bench"}</div>
+            <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{a.records} records</div>
           </div>
         ))}
       </div>
@@ -454,33 +421,26 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
   );
 }
 
-// ═══ Footer + Conda dropdown ═══
+// ═══ Footer ═══
 function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const { state, condaEnvs, condaActive, setCondaActive, condaDropdown, setCondaDropdown } = props;
   return (
     <footer className="footbar">
-      <div className="stage">device <b>{state.deviceAttached ? (state.real ? "REAL" : "mock") : "—"}</b></div>
-      <span className="arr">→</span>
-      <div className="stage">brain <b>{state.brainReady ? "ready" : "..."}</b></div>
-      <span className="arr">→</span>
+      <div className="stage">device <b>{state.deviceAttached ? (state.real?"REAL":"mock") : "—"}</b></div><span className="arr">→</span>
+      <div className="stage">brain <b>{state.brainReady?"ready":"..."}</b></div><span className="arr">→</span>
       <div className="stage">assets <b>{state.assets}</b></div>
       <div className="spacer" />
-      {/* Conda dropdown */}
       <div style={{ position: "relative" }}>
-        <div className="stage" style={{ cursor: "pointer" }} onClick={() => setCondaDropdown(!condaDropdown)}>
-          🐍 <b>{condaActive}</b> ▾
-        </div>
+        <div className="stage" onClick={() => setCondaDropdown(!condaDropdown)}>🐍 <b>{condaActive}</b> ▾</div>
         {condaDropdown && (
           <div className="conda-dropdown">
-            {condaEnvs.length === 0 ? (
-              <div className="conda-item">(no envs found)</div>
-            ) : condaEnvs.map((env: CondaEnv) => (
-              <div key={env.name}
-                className={`conda-item ${condaActive === env.name ? "active" : ""}`}
-                onClick={() => { setCondaActive(env.name); setCondaDropdown(false); }}>
-                {condaActive === env.name ? "● " : ""}{env.name}
-              </div>
-            ))}
+            {condaEnvs.length === 0 ? <div className="conda-item">(no envs)</div> :
+              condaEnvs.map((env: CondaEnv) => (
+                <div key={env.name} className={`conda-item ${condaActive===env.name?"active":""}`}
+                  onClick={() => { setCondaActive(env.name); setCondaDropdown(false); }}>
+                  {condaActive === env.name ? "● " : ""}{env.name}
+                </div>
+              ))}
           </div>
         )}
       </div>
@@ -490,27 +450,24 @@ function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-expli
 
 // ── helpers ──
 function iconForExt(ext: string): string {
-  const m: Record<string, string> = { py: "🐍", ts: "🟦", tsx: "⚛️", c: "🔧", h: "🔧", js: "🟨", json: "📄", md: "📖", yaml: "📄", yml: "📄", proto: "📄", sh: "📜" };
-  return m[ext.toLowerCase()] || "📄";
+  const m: Record<string,string> = { py:"🐍", ts:"🟦", tsx:"⚛️", c:"🔧", h:"🔧", js:"🟨", json:"📄", md:"📖", yaml:"📄", yml:"📄", proto:"📄", sh:"📜" };
+  return m[ext?.toLowerCase()] || "📄";
 }
-
 interface StudioState {
-  deviceAttached: boolean; lastAlarm: FluxEvent | undefined; assets: number;
-  brainReady: boolean; openocdEvents: number; real: boolean;
+  deviceAttached: boolean; brainReady: boolean; real: boolean; assets: number; openocdEvents: number;
+  lastAlarm: FluxEvent | undefined;
   workflow: { name: string; steps: Array<{ name: string; op: string; deps: string[] }> } | undefined;
 }
-
 function deriveState(events: FluxEvent[]): StudioState {
-  let deviceAttached = false, brainReady = false, real = false, assets = 0, openocdEvents = 0;
-  let lastAlarm: FluxEvent | undefined; let workflow: StudioState["workflow"] = undefined;
+  let deviceAttached=false, brainReady=false, real=false, assets=0, openocdEvents=0;
+  let lastAlarm: FluxEvent|undefined; let workflow: StudioState["workflow"];
   for (const e of events) {
-    if (e.topic === "device.attached") { deviceAttached = true; real = Boolean(e.data?.["real"]); }
-    if (e.topic === "brain.ready") brainReady = true;
-    if (e.topic === "alarm.critical" || e.topic === "alarm.policy-violation") lastAlarm = e;
-    if (e.topic === "asset.committed") assets += 1;
-    if (e.topic === "openocd.event") openocdEvents += 1;
-    if (e.topic === "workflow.published")
-      workflow = { name: String(e.data?.["name"] ?? "?"), steps: (e.data?.["steps"] as Array<{ name: string; op: string; deps: string[] }>) ?? [] };
+    if (e.topic==="device.attached"){deviceAttached=true;real=Boolean(e.data?.["real"]);}
+    if (e.topic==="brain.ready") brainReady=true;
+    if (e.topic==="alarm.critical"||e.topic==="alarm.policy-violation") lastAlarm=e;
+    if (e.topic==="asset.committed") assets++;
+    if (e.topic==="openocd.event") openocdEvents++;
+    if (e.topic==="workflow.published") workflow={name:String(e.data?.["name"] ?? "?"),steps:((e.data?.["steps"] as unknown as Array<{name:string;op:string;deps:string[]}>) ?? [])};
   }
   return { deviceAttached, brainReady, lastAlarm, assets, openocdEvents, real, workflow };
 }

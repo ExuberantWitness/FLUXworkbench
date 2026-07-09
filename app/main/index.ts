@@ -2,7 +2,7 @@
 
 import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from "electron";
 import * as path from "node:path";
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, unlinkSync, rmSync, renameSync } from "node:fs";
 import { exec } from "node:child_process";
 import { InProcessBus } from "./kernel/bus";
 import { Scheduler } from "./kernel/scheduler";
@@ -190,6 +190,20 @@ ipcMain.handle("flux:writeFile", async (_evt, filePath: string, content: string)
   writeFileSync(filePath, content, "utf-8");
 });
 
+ipcMain.handle("flux:createFile", async (_evt, filePath: string) => {
+  writeFileSync(filePath, "", "utf-8");
+});
+ipcMain.handle("flux:createDir", async (_evt, dirPath: string) => {
+  mkdirSync(dirPath, { recursive: true });
+});
+ipcMain.handle("flux:deleteFile", async (_evt, filePath: string) => {
+  const stat = statSync(filePath);
+  if (stat.isDirectory()) rmSync(filePath, { recursive: true });
+  else unlinkSync(filePath);
+});
+ipcMain.handle("flux:renameFile", async (_evt, oldPath: string, newPath: string) => {
+  renameSync(oldPath, newPath);
+});
 ipcMain.handle("flux:openFolder", async () => {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
   return result.canceled ? null : result.filePaths[0] ?? null;
