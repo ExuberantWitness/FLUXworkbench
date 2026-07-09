@@ -49,6 +49,9 @@ export function App() {
     apiKey: "",
     model: "openbmb/MiniCPM-V-4.6",
   });
+  const [fluxAssets, setFluxAssets] = useState<{ id: string; path: string; kind: string; records: number }[]>([]);
+  const [building, setBuilding] = useState(false);
+  const [buildResult, setBuildResult] = useState<string>("");
 
   useEffect(() => {
     const off = window.flux?.onEvent?.((e: FluxEvent) => {
@@ -139,6 +142,38 @@ export function App() {
     setEvents([]);
   };
 
+  // ── Build (cross-compile) ──
+  const doBuild = async (): Promise<void> => {
+    setBuilding(true);
+    setBuildResult("Building…");
+    try {
+      const res = await window.flux?.build?.(projectPath);
+      if (res?.ok) {
+        setBuildResult(`✅ ${res.elf}`);
+      } else {
+        setBuildResult(`❌ ${res?.error?.slice(0, 200) ?? "unknown"}`);
+      }
+    } catch (e) {
+      setBuildResult(`❌ ${e}`);
+    }
+    setBuilding(false);
+  };
+
+  // ── Load .flux assets on mount + when asset.committed fires ──
+  useEffect(() => {
+    void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0);
+  }, [state.assets]);
+
+  // ── Auto-insert code from agent chat ──
+  useEffect(() => {
+    const lastMsg = chatMsgs[chatMsgs.length - 1];
+    if (lastMsg?.role === "agent" && lastMsg.codeBlock) {
+      setFileContent(lastMsg.codeBlock);
+      setActiveFile("agent_generated.py");
+      setActiveFilePath("");
+    }
+  }, [chatMsgs]);
+
   return (
     <div className="shell">
       <LeftSidebar
@@ -150,13 +185,17 @@ export function App() {
         sessionList={sessionList} activeSession={activeSession}
         setActiveSession={setActiveSession} newSession={newSession}
         apiConfig={apiConfig} setApiConfig={setApiConfig}
+        projectPath={projectPath} setProjectPath={setProjectPath}
       />
       <ChatArea
         msgs={chatMsgs} input={chatInput} setInput={setChatInput}
         sendChat={sendChat} fileContent={fileContent} activeFile={activeFile}
         saveFile={saveFile} state={state}
       />
-      <RightPanel events={events} state={state} />
+      <RightPanel
+        events={events} state={state}
+        fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild}
+      />
       <Footer
         state={state}
         condaEnvs={condaEnvs} condaActive={condaActive}
@@ -197,7 +236,8 @@ function TreeView({ nodes, depth, activeFile, toggleFolder, openFile }: {
 // ═══ Left Sidebar ═══
 function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const { tab, setTab, events, state, treeRoot, toggleFolder, activeFile, openFile,
-    customOpen, setCustomOpen, sessionList, activeSession, setActiveSession, newSession, apiConfig, setApiConfig } = props;
+    customOpen, setCustomOpen, sessionList, activeSession, setActiveSession, newSession,
+    apiConfig, setApiConfig, projectPath, setProjectPath } = props;
   const customSections = [
     { id: "overview", label: "Overview", items: [`kernel: ${state.brainReady ? "ready" : "..."}`, `device: ${state.real ? "REAL" : "mock"}`] },
     { id: "workflow", label: "Workflow", items: state.workflow?.steps.map((s: any) => `${s.name}: ${s.op}`) ?? ["(none)"] },
@@ -239,6 +279,13 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
         {tab === "memory" && <MemoryPanel events={events} />}
         {tab === "explorer" && (
           <div>
+            <div style={{ marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 9, fontFamily: "var(--mono)", color: "var(--grey-3)", textTransform: "uppercase" }}>{projectPath.split("/").pop()}</span>
+              <button className="ls-new-btn" onClick={async () => {
+                const p = await window.flux?.openFolder?.();
+                if (p) setProjectPath(p);
+              }}>Open</button>
+            </div>
             {treeRoot.length === 0 ? (
               <div className="empty-hint">Loading…</div>
             ) : (
@@ -334,21 +381,25 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
 }
 
 // ═══ Right Panel ═══
-function RightPanel({ events, state }: { events: FluxEvent[]; state: StudioState }) {
-  const ocdEvents = events.filter((e) => e.topic === "openocd.event").slice(-3);
-  const assets = events.filter((e) => e.topic === "asset.committed");
+function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { events, state, fluxAssets, building, buildResult, doBuild } = props;
+  const ocdEvents = events.filter((e: FluxEvent) => e.topic === "openocd.event").slice(-3);
+  const assets = events.filter((e: FluxEvent) => e.topic === "asset.committed");
   return (
     <aside className="right-panel">
+      {/* Flux Insight Loop — iframe to :8420 dashboard */}
       <div className="rp-section">
         <div className="rp-h">Flux Insight Loop</div>
         <div className="kpi-row">
-          <div className="kpi-cell"><div className="lbl">Research</div><div className="nb accent">{events.filter((e) => e.topic === "workflow.published").length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Research</div><div className="nb accent">{events.filter((e: FluxEvent) => e.topic === "workflow.published").length}</div></div>
           <div className="kpi-cell"><div className="lbl">Execute</div><div className="nb">{ocdEvents.length}</div></div>
           <div className="kpi-cell"><div className="lbl">Asset</div><div className="nb accent">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Debug</div><div className="nb">{events.filter((e) => e.topic === "alarm.critical").length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Debug</div><div className="nb">{events.filter((e: FluxEvent) => e.topic === "alarm.critical").length}</div></div>
         </div>
-        <div style={{ fontSize: 10, color: "var(--grey-3)", fontFamily: "var(--mono)" }}>research → write → execute → debug</div>
+        <iframe src="http://127.0.0.1:8420" style={{ width: "100%", height: 200, border: "1px solid var(--border)", borderRadius: 3, marginTop: 4 }}
+          title="Flux Insight Dashboard" />
       </div>
+      {/* Physical Subagents */}
       <div className="rp-section">
         <div className="rp-h">Physical Subagents</div>
         <div className="rp-card">
@@ -361,23 +412,39 @@ function RightPanel({ events, state }: { events: FluxEvent[]; state: StudioState
           <div className="rp-title">brain-agent</div>
           <div className="rp-chips"><span className="rp-chip">characterize</span><span className="rp-chip">codegen</span><span className="rp-chip">chat</span></div>
         </div>
-        {ocdEvents.map((e, i) => (
+        {ocdEvents.map((e: FluxEvent, i: number) => (
           <div key={i} style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", padding: "2px 0" }}>
             {String(e.data?.["cmd"] ?? "")} → {String(e.data?.["reply"] ?? "").slice(0, 40)}
           </div>
         ))}
       </div>
+      {/* Build (cross-compile) */}
       <div className="rp-section">
-        <div className="rp-h">DevReady Assets</div>
+        <div className="rp-h">Cross-Compile</div>
+        <button className="chat-send" style={{ width: "100%", marginBottom: 4 }} disabled={building} onClick={doBuild}>
+          {building ? "Building…" : "▶ Build (flash_xip)"}
+        </button>
+        {buildResult && <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", wordBreak: "break-all" }}>{buildResult.slice(0, 200)}</div>}
+      </div>
+      {/* DevReady Assets — from .flux files */}
+      <div className="rp-section">
+        <div className="rp-h">DevReady Assets (.flux)</div>
         <div className="kpi-row">
-          <div className="kpi-cell"><div className="lbl">Total</div><div className="nb">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Driver</div><div className="nb accent">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Device</div><div className="nb">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Bench</div><div className="nb">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Events</div><div className="nb">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">.flux Files</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
         </div>
-        {assets.length === 0 ? <div className="empty-hint">flash to create assets</div> : assets.map((e, i) => (
+        {/* .flux file assets */}
+        {fluxAssets && fluxAssets.length > 0 ? fluxAssets.map((a: { id: string; path: string; kind: string; records: number }, i: number) => (
           <div key={i} className="rp-card">
-            <div className="rp-meta">ASSET · {String(e.data?.["asset_id"] ?? "?")}</div>
+            <div className="rp-meta">FLUX · {a.kind}</div>
+            <div className="rp-title" style={{ fontSize: 11 }}>{a.id}</div>
+            <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{a.records} records · {a.path.split("/").pop()}</div>
+          </div>
+        )) : <div className="empty-hint">no .flux files yet</div>}
+        {/* Event-based assets */}
+        {assets.map((e: FluxEvent, i: number) => (
+          <div key={`e${i}`} className="rp-card">
+            <div className="rp-meta">EVENT · {String(e.data?.["asset_id"] ?? "?")}</div>
             <div className="rp-title" style={{ fontSize: 11 }}>HPM6E00 bringup</div>
             <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{(e.data?.["components"] as string[])?.join(" + ") || "profile + driver + bench"}</div>
           </div>

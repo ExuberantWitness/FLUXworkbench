@@ -203,6 +203,17 @@ ipcMain.handle("flux:condaList", async () => {
   });
 });
 
+ipcMain.handle("flux:listAssets", async () => {
+  const { exec } = require("child_process");
+  return new Promise((resolve) => {
+    const py = process.env["FLUX_BRAIN_PY"] ?? "python3";
+    const mod = process.env["FLUXMEME_PATH"] ?? "/home/exuber/CORE/CORE27/FLUXmeme/python";
+    exec(`${py} -c "import sys;sys.path.insert(0,);from fluxmeme_store_proxy import list_all;import json;print(json.dumps(list_all()))"`,
+      { env: { ...process.env, PYTHONPATH: process.env["FLUX_BRAIN_PATH"] ?? "", FLUXMEME_PATH: mod } },
+      (err: Error | null, stdout: string) => { try { resolve(JSON.parse(stdout.trim())); } catch { resolve([]); } });
+  });
+});
+
 ipcMain.handle("flux:condaCreate", async (_evt, name: string) => {
   return new Promise((resolve, reject) => {
     exec(`conda create -n ${name} -y`, (err) => err ? reject(err) : resolve(undefined));
@@ -210,6 +221,21 @@ ipcMain.handle("flux:condaCreate", async (_evt, name: string) => {
 });
 
 // ── app lifecycle ──
+ipcMain.handle("flux:build", async (_evt: any, sampleDir: string) => {
+  return new Promise((resolve) => {
+    const toolchain = process.env["GNURISCV_TOOLCHAIN_PATH"] ?? "/opt/riscv";
+    const sdk = process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk";
+    const buildDir = "/tmp/flux-build-" + Date.now();
+    exec(`mkdir -p ${buildDir} && cd ${buildDir} && cmake -DBOARD=hpm6e00evk -DHPM_SDK_BASE=${sdk} -DHPM_BUILD_TYPE=flash_xip ${sampleDir} && make -j4`,
+      { env: { ...process.env, GNURISCV_TOOLCHAIN_PATH: toolchain, HPM_SDK_BASE: sdk, PATH: `${toolchain}/bin:${process.env.PATH}` } },
+      (err, stdout, stderr) => {
+        if (err) { resolve({ ok: false, error: stderr.slice(-500) }); return; }
+        const elf = `${buildDir}/output/demo.elf`;
+        resolve({ ok: true, elf, buildDir, log: stdout.slice(-500) });
+      });
+  });
+});
+
 app.whenReady().then(async () => {
   await bootKernel().catch((e) => console.error("[kernel] boot failed:", e));
   await createWindow();

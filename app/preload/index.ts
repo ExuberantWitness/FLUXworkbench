@@ -29,11 +29,11 @@ const api = {
     return () => ipcRenderer.off("flux:event", handler);
   },
   // ── chat ──
-  sendSetApi(config: Record<string, string>): Promise<void> {
-    return ipcRenderer.invoke("flux:setApi", config);
-  },
   sendChat(text: string): Promise<void> {
     return ipcRenderer.invoke("flux:chat", text);
+  },
+  sendSetApi(config: Record<string, string>): Promise<void> {
+    return ipcRenderer.invoke("flux:setApi", config);
   },
   // ── file system ──
   readDir(path: string): Promise<DirEntry[]> {
@@ -47,6 +47,14 @@ const api = {
   },
   openFolder(): Promise<string | null> {
     return ipcRenderer.invoke("flux:openFolder");
+  },
+  // ── build (cross-compile) ──
+  build(sampleDir: string): Promise<{ ok: boolean; elf?: string; error?: string; log?: string }> {
+    return ipcRenderer.invoke("flux:build", sampleDir);
+  },
+  // ── flux assets ──
+  listFluxAssets(): Promise<Array<{ id: string; path: string; kind: string; records: number }>> {
+    return ipcRenderer.invoke("flux:listAssets");
   },
   // ── conda ──
   condaList(): Promise<CondaEnv[]> {
