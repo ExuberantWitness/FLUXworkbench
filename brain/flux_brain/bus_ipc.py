@@ -82,11 +82,12 @@ def _vllm_characterize() -> dict[str, Any]:
 
 
 def _characterize() -> dict[str, Any]:
-    """Try local MiniCPM-V 4.6; fall back to mock if vLLM unavailable."""
+    """Characterize via multi-provider LLM; fall back to mock."""
     try:
-        return _vllm_characterize()
+        from flux_brain.llm_multi import characterize as llm_characterize
+        return llm_characterize()
     except Exception:
-        log.warning("vLLM unavailable, using mock characterize")
+        log.warning("LLM characterize failed, using mock")
         return _mock_characterize()
 
 
@@ -265,17 +266,13 @@ def main() -> int:
 
     bus.subscribe("openocd.event", on_openocd)
 
-    # agent chat: user message → MiniCPM-V → reply (plan v1 minimal: agent panel)
+    # agent chat: user message → multi-provider LLM → reply
     def on_chat(evt: dict[str, Any]) -> None:
         text = str(evt.get("data", {}).get("text", ""))
         if not text:
             return
-        try:
-            from flux_brain.llm_vllm import chat as llm_chat
-            reply = llm_chat(text)
-        except Exception:
-            log.warning("chat LLM unavailable")
-            reply = "(LLM unavailable — vLLM :8000 not running?)"
+        from flux_brain.llm_multi import chat as llm_chat
+        reply = llm_chat(text)
         bus.publish({
             "source": "brain", "kind": "execute", "topic": "agent.event",
             "data": {"step": "chat", "user": text, "reply": reply[:500]},
@@ -283,6 +280,19 @@ def main() -> int:
         })
 
     bus.subscribe("cmd.chat", on_chat)
+
+    # API config: update provider at runtime (from studio UI)
+    def on_set_api(evt: dict[str, Any]) -> None:
+        from flux_brain.llm_multi import update_config
+        d = evt.get("data", {})
+        update_config(**{k: str(v) for k, v in d.items() if k in ("provider", "endpoint", "api_key", "model")})
+        bus.publish({
+            "source": "brain", "kind": "log", "topic": "agent.event",
+            "data": {"step": "api-config", "config": d},
+            "trace_id": evt.get("trace_id", ""),
+        })
+
+    bus.subscribe("cmd.set_api", on_set_api)
     bus.publish({"source": "brain", "kind": "log", "topic": "brain.ready",
                  "data": {}, "trace_id": ""})
     bus.run()

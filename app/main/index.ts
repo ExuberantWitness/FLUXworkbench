@@ -39,7 +39,7 @@ async function mirrorEventsToRenderer(): Promise<void> {
     "brain.ready", "device.attached", "device.detached", "alarm.critical",
     "alarm.policy-violation",
     "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
-    "agent.event", "run.state", "workflow.published", "cmd.chat",
+    "agent.event", "run.state", "workflow.published", "cmd.chat", "cmd.set_api",
   ];
   for (const t of topics) {
     await bus.subscribe(t, (e: Event) => {
@@ -155,6 +155,10 @@ ipcMain.handle("flux:status", async () => ({ ok: true, ready: true }));
 ipcMain.handle("flux:chat", async (_evt, text: string) => {
   await bus.publish({ source: "ui", kind: "execute", topic: "cmd.chat",
     data: { text }, trace_id: `chat-${Date.now()}` });
+});
+ipcMain.handle("flux:setApi", async (_evt, config: Record<string, string>) => {
+  await bus.publish({ source: "ui", kind: "execute", topic: "cmd.set_api",
+    data: config, trace_id: `api-${Date.now()}` });
 });
 
 ipcMain.handle("flux:readDir", async (_evt, dirPath: string) => {

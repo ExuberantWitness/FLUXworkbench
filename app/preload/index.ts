@@ -29,6 +29,9 @@ const api = {
     return () => ipcRenderer.off("flux:event", handler);
   },
   // ── chat ──
+  sendSetApi(config: Record<string, string>): Promise<void> {
+    return ipcRenderer.invoke("flux:setApi", config);
+  },
   sendChat(text: string): Promise<void> {
     return ipcRenderer.invoke("flux:chat", text);
   },

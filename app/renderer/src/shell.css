@@ -57,9 +57,21 @@ html,body,#root{height:100%;background:var(--paper);color:var(--ink);
 .custom-item .dot-sm.on{background:var(--accent)}
 
 /* ── Conda 底部 ── */
-.conda-btn{padding:8px 12px;border-top:1px solid var(--border);font-size:11px;cursor:pointer;
-  color:var(--grey-3);display:flex;align-items:center;gap:6px;font-family:var(--mono)}
-.conda-btn:hover{background:var(--grey-1);color:var(--ink)}
+/* ── new session button ── */
+.ls-new-btn{background:var(--accent);color:var(--accent-on);border:none;padding:2px 8px;
+  font-size:10px;cursor:pointer;border-radius:2px;font-family:var(--mono)}
+.ls-new-btn:hover{background:var(--accent-bright)}
+
+/* ── file tree list ── */
+.ft-list{list-style:none}
+
+/* ── conda dropdown ── */
+.conda-dropdown{position:absolute;bottom:28px;right:0;background:var(--paper);
+  border:1px solid var(--grey-2);box-shadow:0 2px 8px rgba(0,0,0,.1);
+  min-width:160px;max-height:300px;overflow-y:auto;z-index:100}
+.conda-item{padding:6px 12px;font-size:11px;cursor:pointer;color:var(--grey-3);font-family:var(--mono)}
+.conda-item:hover{background:var(--grey-1);color:var(--ink)}
+.conda-item.active{color:var(--accent);font-weight:500}
 
 /* ── 中央 Chat ── */
 .chat-area{grid-area:center;display:flex;flex-direction:column;overflow:hidden;background:var(--paper)}
