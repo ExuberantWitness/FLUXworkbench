@@ -8,6 +8,7 @@ import { InProcessBus } from "./kernel/bus";
 import { Scheduler } from "./kernel/scheduler";
 import { Supervisor } from "./kernel/supervisor";
 import { NodeIpcTransport } from "./kernel/transports/node-ipc";
+import { MCPOrchestrator } from "./mcp_orchestrator";
 import { OpenOcdAgent } from "./kernel/agents/openocd";
 import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runner";
 import { generateKeyPair, signManifest, verifyManifest, parseManifest } from "./kernel/capability";
@@ -65,16 +66,56 @@ async function bootKernel(): Promise<void> {
   const capOk = verifyManifest(openocdManifest, pub);
   console.log(`[kernel] capability: ${capOk ? "verified ✓" : "FAILED ✗"}`);
 
-  const brainTransport = new NodeIpcTransport(bus);
-  brainTransport.start(BRAIN_PY, ["-u", "-m", BRAIN_MODULE], {
-    PYTHONPATH: BRAIN_PATH,
-    PYTHONUNBUFFERED: "1",
-    NO_PROXY: "127.0.0.1,localhost",
-    no_proxy: "127.0.0.1,localhost",
-    https_proxy: "",
-    http_proxy: "",
-    all_proxy: "",
+  // ── MCP servers (replaces Node-IPC brain) ──
+  const mcp = new MCPOrchestrator(bus);
+
+  // Start Flux-Insight MCP server (conductor + LLM)
+  const brainPy = process.env["FLUX_BRAIN_PY"] ?? path.join(repoRoot(), "brain", ".venv", "bin", "python");
+  const insightScript = path.join(repoRoot(), "brain", "flux_insight_mcp.py");
+  await mcp.startServer({
+    name: "flux-insight",
+    command: brainPy,
+    args: ["-u", insightScript],
+    env: {
+      PYTHONUNBUFFERED: "1",
+      NO_PROXY: "127.0.0.1,localhost",
+      no_proxy: "127.0.0.1,localhost",
+      https_proxy: "",
+      http_proxy: "",
+      all_proxy: "",
+    },
+  }).catch((e) => console.error("[mcp] flux-insight failed:", e.message));
+
+  // Start physical-subagent MCP server
+  const physicalScript = path.join(repoRoot(), "brain", "physical_mcp.py");
+  await mcp.startServer({
+    name: "physical",
+    command: brainPy,
+    args: ["-u", physicalScript],
+    env: {
+      PYTHONUNBUFFERED: "1",
+      FLUX_OPENOCD_REAL: process.env["FLUX_OPENOCD_REAL"] ?? "0",
+      FLUX_OPENOCD_BIN: process.env["FLUX_OPENOCD_BIN"] ?? "/tmp/hpm-openocd/src/openocd",
+      HPM_SDK_BASE: process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk",
+    },
+  }).catch((e) => console.error("[mcp] physical failed:", e.message));
+
+  console.log(`[mcp] ${mcp.listTools().length} tools available: ${mcp.listTools().map(t => t.name).join(", ")}`);
+
+  // Handle chat IPC → MCP callTool
+  ipcMain.handle("flux:chat", async (_evt, text: string) => {
+    const result = await mcp.callTool("chat", { message: text });
+    const content = (result as { content?: Array<{ text?: string }> })?.content;
+    const reply = content?.[0]?.text ?? "(no reply)";
+    await bus.publish({
+      source: "flux-insight", kind: "execute", topic: "agent.event",
+      data: { step: "chat", user: text, reply }, trace_id: `chat-${Date.now()}`,
+    });
   });
+  ipcMain.handle("flux:setApi", async (_evt, config: Record<string, string>) => {
+    await mcp.callTool("set_api_config", config);
+  });
+  ipcMain.handle("flux:mcpTools", async () => mcp.listTools());
 
   const ocd = new OpenOcdAgent(bus);
   if (process.env["FLUX_OPENOCD_REAL"] === "1") {
@@ -275,5 +316,6 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", async () => {
   await supervisor.stopAll();
+  // MCP servers are cleaned up by supervisor or OS; add explicit cleanup if needed
   if (process.platform !== "darwin") app.quit();
 });
