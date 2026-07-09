@@ -1,6 +1,4 @@
-// Flux Workbench — preload. Exposes a minimal, typed `window.flux` surface to the
-// sandboxed renderer. Events from the kernel Bus are mirrored on the "flux:event"
-// IPC channel; the renderer subscribes via onEvent.
+// Flux Studio — preload. Bridges renderer ↔ main process.
 import { contextBridge, ipcRenderer } from "electron";
 
 interface FluxEvent {
@@ -11,19 +9,52 @@ interface FluxEvent {
   trace_id: string;
 }
 
+interface DirEntry {
+  name: string;
+  isDir: boolean;
+  ext: string;
+}
+
+interface CondaEnv {
+  name: string;
+  path: string;
+}
+
 const api = {
-  version: "0.1.0",
-  /** Subscribe to the kernel event stream. Returns an unsubscribe fn. */
+  version: "0.2.0",
+  // ── event stream ──
   onEvent(cb: (e: FluxEvent) => void): () => void {
     const handler = (_: unknown, e: FluxEvent): void => cb(e);
     ipcRenderer.on("flux:event", handler);
     return () => ipcRenderer.off("flux:event", handler);
   },
-  status(): Promise<unknown> {
-    return ipcRenderer.invoke("flux:status");
-  },
+  // ── chat ──
   sendChat(text: string): Promise<void> {
     return ipcRenderer.invoke("flux:chat", text);
+  },
+  // ── file system ──
+  readDir(path: string): Promise<DirEntry[]> {
+    return ipcRenderer.invoke("flux:readDir", path);
+  },
+  readFile(path: string): Promise<string> {
+    return ipcRenderer.invoke("flux:readFile", path);
+  },
+  writeFile(path: string, content: string): Promise<void> {
+    return ipcRenderer.invoke("flux:writeFile", path, content);
+  },
+  openFolder(): Promise<string | null> {
+    return ipcRenderer.invoke("flux:openFolder");
+  },
+  // ── conda ──
+  condaList(): Promise<CondaEnv[]> {
+    return ipcRenderer.invoke("flux:condaList");
+  },
+  condaCreate(name: string): Promise<void> {
+    return ipcRenderer.invoke("flux:condaCreate", name);
+  },
+  // ── misc ──
+  status(): Promise<unknown> {
+    return ipcRenderer.invoke("flux:status");
   },
 };
 

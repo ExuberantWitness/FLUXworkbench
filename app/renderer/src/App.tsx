@@ -1,57 +1,12 @@
-// Flux Workbench — Swiss/IKB themed studio (参 flux-runtime/ui/index.html)
-// 文件树 + Monaco 编辑器 + 事件流 + agent chat（含代码自动插入编辑器）
-import { useEffect, useMemo, useState, useRef } from "react";
-import Editor from "@monaco-editor/react";
+// Flux Studio — VSCode Agents Window 式 UI
+// 三栏：LeftSidebar（四层 tab + Customizations）| ChatArea（中央主位）| RightPanel（Flux Insight Loop + Physical Subagents + DevReady Assets）
+import { useEffect, useMemo, useState } from "react";
 
-interface FluxEvent {
-  source: string;
-  kind: string;
-  topic: string;
-  data: Record<string, unknown>;
-  trace_id: string;
-}
-
-interface ChatMsg {
-  role: "user" | "agent";
-  text: string;
-  codeBlock?: string;
-}
-
-// ── 虚拟项目文件树（可扩展为真实文件系统）──
-const FILE_TREE = [
-  { name: "brain", icon: "📁", children: [
-    { name: "session.py", icon: "🐍" },
-    { name: "workflow.py", icon: "🐍" },
-    { name: "bus_ipc.py", icon: "🐍" },
-    { name: "llm_vllm.py", icon: "🐍" },
-    { name: "asset_store.py", icon: "🐍" },
-    { name: "codegen.py", icon: "🐍" },
-    { name: "policy_gate.py", icon: "🐍" },
-  ]},
-  { name: "app", icon: "📁", children: [
-    { name: "main/index.ts", icon: "🟦" },
-    { name: "kernel/scheduler.ts", icon: "🟦" },
-    { name: "kernel/bus.ts", icon: "🟦" },
-    { name: "kernel/agents/openocd.ts", icon: "🟦" },
-    { name: "renderer/App.tsx", icon: "⚛️" },
-  ]},
-  { name: "native/openocd", icon: "📁", children: [
-    { name: "openocd_rpc.c", icon: "🔧" },
-    { name: "openocd_cli.c", icon: "🔧" },
-  ]},
-  { name: "bus/topics", icon: "📁", children: [
-    { name: "device.proto", icon: "📄" },
-  ]},
-  { name: "start.sh", icon: "📜" },
-  { name: "USAGE.md", icon: "📖" },
-];
-
-const DEFAULT_CODE = `# Flux Workbench — agent 可以在这里写代码
-# 在 agent chat 里提问，代码块会自动插入编辑器
-
-def read_hpm_id():
-    return 0xDEADBEEF
-`;
+// ── types ──
+interface FluxEvent { source: string; kind: string; topic: string; data: Record<string, unknown>; trace_id: string }
+interface ChatMsg { role: "user" | "agent"; text: string; codeBlock?: string }
+interface DirEntry { name: string; isDir: boolean; ext: string }
+interface CondaEnv { name: string; path: string }
 
 declare global {
   interface Window {
@@ -60,309 +15,333 @@ declare global {
   }
 }
 
+type LeftTab = "context" | "session" | "memory" | "explorer";
+
+// ── default project ──
+const DEFAULT_PROJECT = "/home/exuber/hpm_sdk/samples/hello_world";
+
 export function App() {
   const [events, setEvents] = useState<FluxEvent[]>([]);
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [panelTab, setPanelTab] = useState<"events" | "chat">("events");
-  const [navTab, setNavTab] = useState<"studio" | "subagents" | "assets">("studio");
-  const [activeFile, setActiveFile] = useState<string>("scratch.py");
-  const [editorCode, setEditorCode] = useState(DEFAULT_CODE);
-  const editorRef = useRef<Parameters<NonNullable<Parameters<typeof Editor>[0]["onMount"]>>[0] | null>(null);
+  const [leftTab, setLeftTab] = useState<LeftTab>("explorer");
+  const [projectPath, setProjectPath] = useState(DEFAULT_PROJECT);
+  const [fileTree, setFileTree] = useState<DirEntry[]>([]);
+  const [activeFile, setActiveFile] = useState("");
+  const [fileContent, setFileContent] = useState("");
+  const [condaEnvs, setCondaEnvs] = useState<CondaEnv[]>([]);
+  const [customOpen, setCustomOpen] = useState<string | null>(null);
 
   useEffect(() => {
     const off = window.flux?.onEvent?.((e: FluxEvent) => {
-      setEvents((prev) => [...prev.slice(-200), e]);
+      setEvents((p) => [...p.slice(-200), e]);
       if (e.topic === "agent.event" && e.data?.["step"] === "chat") {
         const reply = String(e.data?.["reply"] ?? "");
-        // 从回复中提取代码块（```...```）
-        const codeMatch = reply.match(/```(\w+)?\n([\s\S]*?)```/);
-        setChatMsgs((prev) => [
-          ...prev.slice(-100),
-          { role: "user", text: String(e.data?.["user"] ?? "") },
-          { role: "agent", text: reply, codeBlock: codeMatch?.[2] },
-        ]);
+        const m = reply.match(/```(\w+)?\n([\s\S]*?)```/);
+        setChatMsgs((p) => [...p.slice(-100),
+          { role: "agent", text: reply, codeBlock: m?.[2] }]);
       }
     });
-    return () => off?.();
+    return () => { off?.(); };
+  }, []);
+
+  // load file tree on projectPath change
+  useEffect(() => {
+    void window.flux?.readDir?.(projectPath).then((entries: DirEntry[]) => {
+      setFileTree(entries);
+    }).catch(() => void 0);
+  }, [projectPath]);
+
+  // load conda on mount
+  useEffect(() => {
+    void window.flux?.condaList?.().then((envs: CondaEnv[]) => setCondaEnvs(envs)).catch(() => void 0);
   }, []);
 
   const state = useMemo(() => deriveState(events), [events]);
 
-  // agent 代码块 → 插入编辑器
-  const insertCode = (code: string): void => {
-    setEditorCode(code);
-    setNavTab("studio");
-    setPanelTab("events");
-  };
-
   const sendChat = (): void => {
     const text = chatInput.trim();
     if (!text) return;
-    setChatMsgs((prev) => [...prev, { role: "user", text }]);
+    setChatMsgs((p) => [...p, { role: "user", text }]);
     setChatInput("");
     void window.flux?.sendChat?.(text);
   };
 
+  const openFile = (name: string): void => {
+    const fullPath = `${projectPath}/${name}`;
+    setActiveFile(name);
+    void window.flux?.readFile?.(fullPath).then((c: string) => setFileContent(c)).catch(() => void 0);
+  };
+
+  const saveCode = (code: string): void => {
+    if (!activeFile) return;
+    void window.flux?.writeFile?.(`${projectPath}/${activeFile}`, code).catch(() => void 0);
+  };
+
   return (
     <div className="shell">
-      <TopNav navTab={navTab} setNavTab={setNavTab} state={state} />
-      {navTab === "studio" && (
-        <>
-          <Sidebar state={state} activeFile={activeFile} setActiveFile={setActiveFile} fileTree={FILE_TREE} />
-          <main className="editor">
-            <Editor
-              height="100%"
-              language={activeFile.endsWith(".py") ? "python" : activeFile.endsWith(".ts") || activeFile.endsWith(".tsx") ? "typescript" : activeFile.endsWith(".c") ? "c" : "plaintext"}
-              value={editorCode}
-              theme="vs"  /* 浅色主题（IKB paper 风格）*/
-              onChange={(v) => setEditorCode(v ?? "")}
-              onMount={(ed) => { editorRef.current = ed; }}
-              options={{ minimap: { enabled: false }, fontSize: 13, fontFamily: "JetBrains Mono" }}
-            />
-          </main>
-          <Panel
-            events={events}
-            chatMsgs={chatMsgs}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            sendChat={sendChat}
-            panelTab={panelTab}
-            setPanelTab={setPanelTab}
-            insertCode={insertCode}
-          />
-        </>
-      )}
-      {navTab === "subagents" && <SubagentsView state={state} events={events} />}
-      {navTab === "assets" && <AssetsView state={state} events={events} />}
+      {/* ── 左侧 ── */}
+      <LeftSidebar
+        tab={leftTab} setTab={setLeftTab}
+        events={events} state={state}
+        fileTree={fileTree} activeFile={activeFile} openFile={openFile}
+        condaEnvs={condaEnvs}
+        customOpen={customOpen} setCustomOpen={setCustomOpen}
+      />
+      {/* ── 中央 chat ── */}
+      <ChatArea
+        msgs={chatMsgs} input={chatInput} setInput={setChatInput}
+        sendChat={sendChat} fileContent={fileContent} activeFile={activeFile} saveCode={saveCode}
+      />
+      {/* ── 右侧 ── */}
+      <RightPanel events={events} state={state} />
+      {/* ── 底部 ── */}
       <Footer state={state} />
     </div>
   );
 }
 
-// ── 顶部导航 ──
-function TopNav({ navTab, setNavTab, state }: { navTab: string; setNavTab: (v: "studio" | "subagents" | "assets") => void; state: StudioState }) {
-  return (
-    <nav className="topnav">
-      <div className="brand"><span className="dot" />FLUX WORKBENCH</div>
-      <div className="nav-links">
-        <div className={`nl ${navTab === "studio" ? "on" : ""}`} onClick={() => setNavTab("studio")}>Studio</div>
-        <div className={`nl ${navTab === "subagents" ? "on" : ""}`} onClick={() => setNavTab("subagents")}>
-          Subagents <span className="badge">{state.deviceAttached ? "1" : "—"}</span>
-        </div>
-        <div className={`nl ${navTab === "assets" ? "on" : ""}`} onClick={() => setNavTab("assets")}>
-          Assets <span className="badge">{state.assets}</span>
-        </div>
-      </div>
-      <div className="status">
-        <span className={`pulse ${state.brainReady ? "on" : ""}`} />
-        <span>{state.brainReady ? "connected" : "offline"}</span>
-      </div>
-    </nav>
-  );
-}
-
-// ── 左侧栏 ──
-function Sidebar({ state, activeFile, setActiveFile, fileTree }: {
-  state: StudioState; activeFile: string; setActiveFile: (f: string) => void; fileTree: typeof FILE_TREE;
+// ═══ Left Sidebar ═══
+function LeftSidebar(props: {
+  tab: LeftTab; setTab: (t: LeftTab) => void;
+  events: FluxEvent[]; state: StudioState;
+  fileTree: DirEntry[]; activeFile: string; openFile: (f: string) => void;
+  condaEnvs: CondaEnv[];
+  customOpen: string | null; setCustomOpen: (s: string | null) => void;
 }) {
+  const { tab, setTab, events, state, fileTree, activeFile, openFile, condaEnvs, customOpen, setCustomOpen } = props;
+  const customSections = [
+    { id: "overview", label: "Overview", items: [`kernel: ${state.brainReady ? "ready" : "..."}`, `device: ${state.real ? "REAL" : "mock"}`] },
+    { id: "workflow", label: "Workflow", items: state.workflow?.steps.map((s) => `${s.name}: ${s.op}`) ?? ["board-bringup"] },
+    { id: "agents", label: "Agents", items: ["openocd-task (C)", "brain-agent (Python)"] },
+    { id: "mcp", label: "MCP Servers", items: ["dimos (v2)", "scp (v2)", "OpenPrism (v2)"] },
+    { id: "skills", label: "Skills", items: ["characterize", "codegen", "schematic→netlist"] },
+    { id: "hooks", label: "Hooks", items: ["before-flash", "after-commit"] },
+    { id: "plugins", label: "Plugins", items: ["PlatformIO (v2)", "probe-rs (v2)"] },
+    { id: "tools", label: "Tools", items: ["riscv GCC 13.2", "HPM_SDK", "HPM OpenOCD 0.12"] },
+  ];
   return (
-    <aside className="sidebar">
-      <div className="side-section">
-        <div className="side-h">kernel peers</div>
-        <div className={`peer ${state.brainReady ? "on" : "off"}`}>
-          <span className="pdot" /> brain {state.brainReady ? "ready" : "..."}
-        </div>
-        <div className={`peer ${state.deviceAttached ? "on" : "off"}`}>
-          <span className="pdot" /> openocd {state.deviceAttached ? (state.real ? "REAL" : "mock") : "—"}
-        </div>
+    <aside className="left-sidebar">
+      <div className="ls-tabs">
+        {(["context", "session", "memory", "explorer"] as LeftTab[]).map((t) => (
+          <div key={t} className={`ls-tab ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>{t}</div>
+        ))}
       </div>
-      {state.workflow && (
-        <div className="side-section">
-          <div className="side-h">workflow · {state.workflow.name}</div>
-          <ol className="wf-steps">
-            {state.workflow.steps.map((s, i) => (
-              <li key={s.name} className={`wf-step ${i < 2 ? "done" : ""}`}>
-                <span className="wf-name">{s.name}</span>
-                <span className="wf-op">{s.op}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-      <div className="side-section">
-        <div className="side-h">explorer</div>
-        <ul className="file-tree">
-          {fileTree.map((item) => (
-            <li key={item.name}>
-              <div className="ft-item" onClick={() => !("children" in item) && setActiveFile(item.name)}>
-                <span className="ft-icon">{item.icon}</span>
-                {item.name}
+      <div className="ls-content">
+        {tab === "context" && <ContextPanel state={state} activeFile={activeFile} />}
+        {tab === "session" && <SessionPanel events={events} />}
+        {tab === "memory" && <MemoryPanel events={events} />}
+        {tab === "explorer" && (
+          <div>
+            {fileTree.length === 0 ? (
+              <div className="empty-hint">loading…</div>
+            ) : (
+              fileTree.map((e) => (
+                <div key={e.name}
+                  className={`ft-item ${activeFile === e.name ? "active" : ""}`}
+                  onClick={() => !e.isDir && openFile(e.name)}>
+                  <span>{e.isDir ? "📁" : iconForExt(e.ext)}</span>
+                  {e.name}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+      {/* Customizations */}
+      <div className="custom-section">
+        {customSections.map((s) => (
+          <div key={s.id}>
+            <div className="custom-h" onClick={() => setCustomOpen(customOpen === s.id ? null : s.id)}>
+              {customOpen === s.id ? "▾" : "▸"} {s.label}
+            </div>
+            {customOpen === s.id && s.items.map((item, i) => (
+              <div key={i} className="custom-item">
+                <span className={`dot-sm ${i === 0 ? "on" : ""}`} />
+                {item}
               </div>
-              {"children" in item && item.children && (
-                <ul className="ft-children">
-                  {item.children.map((child) => (
-                    <li key={child.name}>
-                      <div className={`ft-item ${activeFile === child.name ? "active" : ""}`}
-                           onClick={() => setActiveFile(child.name)}>
-                        <span className="ft-icon">{child.icon}</span>
-                        {child.name}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        ))}
+      </div>
+      {/* Conda */}
+      <div className="conda-btn" onClick={() => void window.flux?.condaList?.().then((e: CondaEnv[]) => alert(e.map((x) => x.name).join("\n")))}>
+        🐍 {condaEnvs.length > 0 ? (condaEnvs[0]?.name ?? "conda") : "conda"} ({condaEnvs.length})
       </div>
     </aside>
   );
 }
 
-// ── 面板（事件流 + agent chat）──
-function Panel(props: {
-  events: FluxEvent[]; chatMsgs: ChatMsg[]; chatInput: string;
-  setChatInput: (v: string) => void; sendChat: () => void;
-  panelTab: "events" | "chat"; setPanelTab: (v: "events" | "chat") => void;
-  insertCode: (code: string) => void;
-}) {
-  const { events, chatMsgs, chatInput, setChatInput, sendChat, panelTab, setPanelTab, insertCode } = props;
-  const shown = [...events].reverse();
+function ContextPanel({ state, activeFile }: { state: StudioState; activeFile: string }) {
   return (
-    <section className="panel">
-      <div className="panel-tabs">
-        <button className={`panel-tab-btn ${panelTab === "events" ? "active" : ""}`} onClick={() => setPanelTab("events")}>uORB Events</button>
-        <button className={`panel-tab-btn ${panelTab === "chat" ? "active" : ""}`} onClick={() => setPanelTab("chat")}>Agent Chat</button>
-      </div>
-      {panelTab === "events" ? (
-        <ul className="event-stream">
-          {shown.map((e, i) => (
-            <li key={events.length - i} className={`event ${e.kind === "error" ? "err" : ""}`}>
-              <span className="ev-topic">{e.topic}</span>
-              <span className="ev-source">{e.source}</span>
-              <span className="ev-data">{JSON.stringify(e.data).slice(0, 120)}</span>
-            </li>
-          ))}
-          {events.length === 0 && <li className="event empty">(waiting for kernel events…)</li>}
-        </ul>
-      ) : (
-        <div className="chat-panel">
-          <div className="chat-messages">
-            {chatMsgs.map((m, i) => (
-              <div key={i}>
-                <div className={`chat-msg chat-${m.role}`}>
-                  <span className="chat-role">{m.role === "user" ? "▸" : "⚡"}</span>
-                  <div>
-                    <div className="chat-text">{m.text}</div>
-                    {m.codeBlock && (
-                      <div className="chat-code-block" onClick={() => insertCode(m.codeBlock!)}>
-                        {m.codeBlock.slice(0, 200)}{m.codeBlock.length > 200 ? "..." : ""}
-                        <div className="chat-code-hint">▸ click to insert into editor</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            {chatMsgs.length === 0 && (
-              <div className="chat-empty">type a message to talk to MiniCPM-V 4.6…</div>
-            )}
-          </div>
-          <div className="chat-input-row">
-            <input className="chat-input" type="text" value={chatInput}
-                   onChange={(e) => setChatInput(e.target.value)}
-                   onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
-                   placeholder="ask MiniCPM-V 4.6..." />
-            <button className="chat-send" onClick={sendChat}>Send</button>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ── Subagents 视图 ──
-function SubagentsView({ state, events }: { state: StudioState; events: FluxEvent[] }) {
-  const ocdEvents = events.filter((e) => e.topic === "openocd.event").slice(-5);
-  return (
-    <div style={{ gridArea: "editor", padding: "4vh 5vw", overflow: "auto" }}>
-      <div className="side-h" style={{ fontSize: "11px" }}>SUBAGENTS · EXECUTE</div>
-      <h2 style={{ fontWeight: 300, fontSize: 28, letterSpacing: "-.018em", marginTop: 8 }}>Embodied Agents</h2>
-      <div style={{ marginTop: 16 }}>
-        <div className="card outlined accent-top">
-          <div className="card-meta">C TOOL · {state.real ? "REAL BOARD" : "MOCK"}</div>
-          <div className="card-title">openocd-task</div>
-          <div className="card-desc">JTAG debug/flash via TCL RPC · device: {state.deviceAttached ? "HPM6E0 attached" : "—"}</div>
-          <div className="chips">
-            <span className="chip">halt</span>
-            <span className="chip">flash</span>
-            <span className="chip">mdw</span>
-            <span className="chip">reset</span>
-          </div>
-        </div>
-        <div className="card outlined">
-          <div className="card-meta">PYTHON · MiniCPM-V 4.6</div>
-          <div className="card-title">brain-agent</div>
-          <div className="card-desc">Local LLM characterize · schematic→netlist · codegen</div>
-          <div className="chips">
-            <span className="chip">characterize</span>
-            <span className="chip">schematic</span>
-            <span className="chip">codegen</span>
-            <span className="chip">chat</span>
-          </div>
-        </div>
-      </div>
-      <div style={{ marginTop: 24 }}>
-        <div className="side-h">RECENT EVENTS</div>
-        {ocdEvents.map((e, i) => (
-          <div key={i} className="event">
-            <span className="ev-topic">{String(e.data?.["cmd"] ?? e.topic)}</span>
-            <span className="ev-source">{e.source}</span>
-            <span className="ev-data">{String(e.data?.["reply"] ?? "").slice(0, 80)}</span>
-          </div>
-        ))}
-      </div>
+    <div>
+      <div className="ctx-item"><input type="checkbox" defaultChecked /> 📄 {activeFile || "(no file)"}</div>
+      <div className="ctx-item"><input type="checkbox" defaultChecked /> 🔧 openocd-task</div>
+      <div className="ctx-item"><input type="checkbox" defaultChecked /> 🧠 brain-agent</div>
+      {state.workflow && state.workflow.steps.map((s) => (
+        <div key={s.name} className="ctx-item"><input type="checkbox" /> 📦 {s.name}</div>
+      ))}
     </div>
   );
 }
 
-// ── Assets 视图 ──
-function AssetsView({ state, events }: { state: StudioState; events: FluxEvent[] }) {
+function SessionPanel({ events }: { events: FluxEvent[] }) {
+  const sessions = events.filter((e) => e.topic === "asset.committed");
+  return (
+    <div>
+      <div className="sess-item active">▶ Current Session ({events.length} events)</div>
+      {sessions.length > 0 && <div className="sess-item">Session {sessions.length} ({sessions[0]?.trace_id?.slice(0, 8) ?? ""})</div>}
+      <div className="sess-item">+ New Session</div>
+    </div>
+  );
+}
+
+function MemoryPanel({ events }: { events: FluxEvent[] }) {
   const assets = events.filter((e) => e.topic === "asset.committed");
   return (
-    <div style={{ gridArea: "editor", padding: "4vh 5vw", overflow: "auto" }}>
-      <div className="side-h" style={{ fontSize: "11px" }}>DEVREADY · FLUXMEME</div>
-      <h2 style={{ fontWeight: 300, fontSize: 28, letterSpacing: "-.018em", marginTop: 8 }}>Asset Library</h2>
-      <div className="kpi-row" style={{ marginTop: 16, maxWidth: 480 }}>
-        <div className="kpi-cell"><div className="lbl">TOTAL</div><div className="nb">{state.assets}</div></div>
-        <div className="kpi-cell"><div className="lbl">DEVICE</div><div className="nb accent">{assets.length}</div></div>
-        <div className="kpi-cell"><div className="lbl">DRIVER</div><div className="nb">{assets.length}</div></div>
-        <div className="kpi-cell"><div className="lbl">BENCH</div><div className="nb">{assets.length}</div></div>
-      </div>
-      <div style={{ marginTop: 24 }}>
-        {assets.length === 0 ? (
-          <div style={{ color: "var(--grey-3)", fontWeight: 300, padding: 20, textAlign: "center" }}>
-            dispatch a flash to create assets
+    <div>
+      <div className="mem-item"><span className="mem-k">device.attached</span> ×{events.filter((e) => e.topic === "device.attached").length}</div>
+      <div className="mem-item"><span className="mem-k">openocd.event</span> ×{events.filter((e) => e.topic === "openocd.event").length}</div>
+      <div className="mem-item"><span className="mem-k">asset.committed</span> ×{assets.length}</div>
+      <div className="mem-item"><span className="mem-k">alarm</span> ×{events.filter((e) => e.topic.startsWith("alarm")).length}</div>
+      <div className="mem-item"><span className="mem-k">workflow.published</span> ×{events.filter((e) => e.topic === "workflow.published").length}</div>
+    </div>
+  );
+}
+
+// ═══ Chat Area (中央主位) ═══
+function ChatArea(props: {
+  msgs: ChatMsg[]; input: string; setInput: (v: string) => void;
+  sendChat: () => void; fileContent: string; activeFile: string; saveCode: (c: string) => void;
+}) {
+  const { msgs, input, setInput, sendChat, fileContent, activeFile, saveCode } = props;
+  return (
+    <main className="chat-area">
+      <div className="chat-messages">
+        {activeFile && fileContent && (
+          <div className="chat-code-block">
+            <div style={{ fontSize: 10, color: "#888", marginBottom: 4 }}>📄 {activeFile}</div>
+            <textarea defaultValue={fileContent.slice(0, 2000)} rows={Math.min(15, fileContent.split("\n").length)} />
+            <div className="chat-code-actions">
+              <button className="chat-code-btn" onClick={() => saveCode(fileContent)}>Save</button>
+            </div>
+          </div>
+        )}
+        {msgs.length === 0 && !activeFile ? (
+          <div className="chat-empty">
+            <div style={{ fontSize: 28, fontWeight: 200, letterSpacing: "-.02em", marginBottom: 8 }}>Flux Studio</div>
+            <div style={{ fontSize: 14 }}>Ask MiniCPM-V 4.6 anything about your hardware project.</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>Or open a file from the Explorer on the left.</div>
           </div>
         ) : (
-          assets.map((e, i) => (
-            <div key={i} className="card outlined accent-top">
-              <div className="card-meta">ASSET · {String(e.data?.["asset_id"] ?? "?")}</div>
-              <div className="card-title">HPM6E00 bringup bundle</div>
-              <div className="card-desc">
-                {(e.data?.["components"] as string[])?.join(" + ") || "device-profile + driver + bench"}
-                {" · past_assets: "}{String((e.data?.["characterization"] as Record<string, unknown> | undefined)?.["past_assets"] ?? "0")}
+          msgs.map((m, i) => (
+            <div key={i}>
+              <div className={`chat-msg chat-${m.role}`}>
+                <span className="chat-role">{m.role === "user" ? "▸" : "⚡"}</span>
+                <div>
+                  <div className="chat-text">{m.text}</div>
+                  {m.codeBlock && (
+                    <div className="chat-code-block">
+                      <textarea defaultValue={m.codeBlock.slice(0, 3000)} rows={Math.min(15, m.codeBlock.split("\n").length)} />
+                      <div className="chat-code-actions">
+                        <button className="chat-code-btn" onClick={() => saveCode(m.codeBlock!)}>Save to File</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
-    </div>
+      <div className="chat-input-row">
+        <input className="chat-input" type="text" value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
+          placeholder="Ask MiniCPM-V 4.6…" />
+        <button className="chat-send" onClick={sendChat}>Send</button>
+      </div>
+    </main>
   );
 }
 
-// ── 底部状态栏 ──
+// ═══ Right Panel ═══
+function RightPanel({ events, state }: { events: FluxEvent[]; state: StudioState }) {
+  const ocdEvents = events.filter((e) => e.topic === "openocd.event").slice(-3);
+  const assets = events.filter((e) => e.topic === "asset.committed");
+  return (
+    <aside className="right-panel">
+      {/* Flux Insight Loop */}
+      <div className="rp-section">
+        <div className="rp-h">Flux Insight Loop</div>
+        <div className="kpi-row">
+          <div className="kpi-cell"><div className="lbl">Research</div><div className="nb accent">{events.filter((e) => e.topic === "workflow.published").length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Execute</div><div className="nb">{ocdEvents.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Asset</div><div className="nb accent">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Debug</div><div className="nb">{events.filter((e) => e.topic === "alarm.critical").length}</div></div>
+        </div>
+        <div style={{ fontSize: 10, color: "var(--grey-3)", fontFamily: "var(--mono)" }}>
+          research → write → execute → debug
+        </div>
+      </div>
+      {/* Physical Subagents */}
+      <div className="rp-section">
+        <div className="rp-h">Physical Subagents</div>
+        <div className="rp-card">
+          <div className="rp-meta"><span className={`rp-status ${state.deviceAttached ? "on" : "off"}`} /> C TOOL · {state.real ? "REAL" : "MOCK"}</div>
+          <div className="rp-title">openocd-task</div>
+          <div className="rp-chips">
+            <span className="rp-chip">halt</span><span className="rp-chip">flash</span>
+            <span className="rp-chip">mdw</span><span className="rp-chip">reset</span>
+          </div>
+        </div>
+        <div className="rp-card">
+          <div className="rp-meta"><span className={`rp-status ${state.brainReady ? "on" : "off"}`} /> PYTHON · MiniCPM-V</div>
+          <div className="rp-title">brain-agent</div>
+          <div className="rp-chips">
+            <span className="rp-chip">characterize</span><span className="rp-chip">codegen</span>
+            <span className="rp-chip">schematic</span><span className="rp-chip">chat</span>
+          </div>
+        </div>
+        {ocdEvents.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ fontSize: 9, color: "var(--grey-3)", fontFamily: "var(--mono)", textTransform: "uppercase", marginBottom: 4 }}>Recent</div>
+            {ocdEvents.map((e, i) => (
+              <div key={i} style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", padding: "2px 0" }}>
+                {String(e.data?.["cmd"] ?? "")} → {String(e.data?.["reply"] ?? "").slice(0, 40)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* DevReady Assets */}
+      <div className="rp-section">
+        <div className="rp-h">DevReady Assets</div>
+        <div className="kpi-row">
+          <div className="kpi-cell"><div className="lbl">Total</div><div className="nb">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Driver</div><div className="nb accent">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Device</div><div className="nb">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">Bench</div><div className="nb">{assets.length}</div></div>
+        </div>
+        {assets.length === 0 ? (
+          <div className="empty-hint">flash to create assets</div>
+        ) : (
+          assets.map((e, i) => (
+            <div key={i} className="rp-card">
+              <div className="rp-meta">ASSET · {String(e.data?.["asset_id"] ?? "?")}</div>
+              <div className="rp-title" style={{ fontSize: 11 }}>HPM6E00 bringup</div>
+              <div style={{ fontSize: 10, color: "var(--grey-3)" }}>
+                {(e.data?.["components"] as string[])?.join(" + ") || "profile + driver + bench"}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ═══ Footer ═══
 function Footer({ state }: { state: StudioState }) {
   return (
     <footer className="footbar">
@@ -372,32 +351,29 @@ function Footer({ state }: { state: StudioState }) {
       <span className="arr">→</span>
       <div className="stage">assets <b>{state.assets}</b></div>
       <span className="arr">→</span>
-      <div className="stage">alarm <b>{state.lastAlarm ? "⚠ " + String(state.lastAlarm.data?.["code"] ?? "") : "—"}</b></div>
+      <div className="stage">alarm <b>{state.lastAlarm ? "⚠" : "—"}</b></div>
       <div className="spacer" />
       <div className="stage">openocd: <b>{state.openocdEvents}</b></div>
     </footer>
   );
 }
 
-// ── 状态推导 ──
+// ── helpers ──
+function iconForExt(ext: string): string {
+  const m: Record<string, string> = { py: "🐍", ts: "🟦", tsx: "⚛️", c: "🔧", h: "🔧", js: "🟨", json: "📄", md: "📖", yaml: "📄", yml: "📄", proto: "📄", cmakelists: "🔧", sh: "📜" };
+  return m[ext.toLowerCase()] || "📄";
+}
+
 interface StudioState {
-  deviceAttached: boolean;
-  lastAlarm: FluxEvent | undefined;
-  assets: number;
-  brainReady: boolean;
-  openocdEvents: number;
+  deviceAttached: boolean; lastAlarm: FluxEvent | undefined; assets: number;
+  brainReady: boolean; openocdEvents: number; real: boolean;
   workflow: { name: string; steps: Array<{ name: string; op: string; deps: string[] }> } | undefined;
-  real: boolean;
 }
 
 function deriveState(events: FluxEvent[]): StudioState {
-  let deviceAttached = false;
-  let brainReady = false;
+  let deviceAttached = false, brainReady = false, real = false, assets = 0, openocdEvents = 0;
   let lastAlarm: FluxEvent | undefined;
-  let assets = 0;
-  let openocdEvents = 0;
   let workflow: StudioState["workflow"] = undefined;
-  let real = false;
   for (const e of events) {
     if (e.topic === "device.attached") { deviceAttached = true; real = Boolean(e.data?.["real"]); }
     if (e.topic === "device.detached") deviceAttached = false;
@@ -406,10 +382,7 @@ function deriveState(events: FluxEvent[]): StudioState {
     if (e.topic === "asset.committed") assets += 1;
     if (e.topic === "openocd.event") openocdEvents += 1;
     if (e.topic === "workflow.published")
-      workflow = {
-        name: String(e.data?.["name"] ?? "?"),
-        steps: (e.data?.["steps"] as Array<{ name: string; op: string; deps: string[] }>) ?? [],
-      };
+      workflow = { name: String(e.data?.["name"] ?? "?"), steps: (e.data?.["steps"] as Array<{ name: string; op: string; deps: string[] }>) ?? [] };
   }
-  return { deviceAttached, brainReady, lastAlarm, assets, openocdEvents, workflow, real };
+  return { deviceAttached, brainReady, lastAlarm, assets, openocdEvents, real, workflow };
 }

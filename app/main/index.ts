@@ -1,12 +1,9 @@
-// Flux Workbench — kernel entry (Electron main process = Tier 1 base).
-//
-// bootKernel wires the infrastructure core: Bus + Scheduler + Supervisor +
-// NodeIpcTransport (Python brain) + OpenOcdAgent (embodied agent). Events flow
-// over the Bus and are mirrored to the renderer via IPC (flux:event channel).
+// Flux Studio — kernel entry (Electron main process = Tier 1 base).
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from "electron";
 import * as path from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { exec } from "node:child_process";
 import { InProcessBus } from "./kernel/bus";
 import { Scheduler } from "./kernel/scheduler";
 import { Supervisor } from "./kernel/supervisor";
@@ -16,9 +13,8 @@ import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runne
 import { generateKeyPair, signManifest, verifyManifest, parseManifest } from "./kernel/capability";
 import type { Event } from "./kernel/types";
 
-// ── path resolution (dev: cwd=app/, repo root = ../.. from out/main) ─────────
+// ── path resolution ──
 function repoRoot(): string {
-  // out/main/index.js -> ../../../ = repo root in dev; fall back to cwd/..
   const fromHere = path.resolve(__dirname, "..", "..", "..");
   return existsSync(path.join(fromHere, "brain"))
     ? fromHere
@@ -27,31 +23,26 @@ function repoRoot(): string {
 const BRAIN_PY = process.env["FLUX_BRAIN_PY"] ?? path.join(repoRoot(), "brain", ".venv", "bin", "python");
 const BRAIN_PATH = process.env["FLUX_BRAIN_PATH"] ?? path.join(repoRoot(), "brain");
 const BRAIN_MODULE = process.env["FLUX_BRAIN_MODULE"] ?? "flux_brain.bus_ipc";
-// dev default: mock openocd cli (no real board). Prod: FLUX_OPENOCD_CLI=<path> [args...]
 const OPENOCD_CMD = process.env["FLUX_OPENOCD_CMD"] ?? "python3";
 const OPENOCD_ARGS = process.env["FLUX_OPENOCD_ARGS"]
   ? process.env["FLUX_OPENOCD_ARGS"].split(" ")
   : [path.join(repoRoot(), "spike", "mock-openocd-cli.py")];
 
-// ── kernel singletons ────────────────────────────────────────────────────────
+// ── kernel singletons ──
 const bus = new InProcessBus();
 const scheduler = new Scheduler();
 const supervisor = new Supervisor();
 let mainWindow: BrowserWindow | null = null;
 
-/** Forward every Bus event to the renderer (flux:event). */
 async function mirrorEventsToRenderer(): Promise<void> {
-  // A coarse wildcard: subscribe to a fixed set of v1 topics. (True wildcard
-  // arrives with the BusListener refactor — v1 lists topics.)
   const topics = [
     "brain.ready", "device.attached", "device.detached", "alarm.critical",
+    "alarm.policy-violation",
     "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
     "agent.event", "run.state", "workflow.published", "cmd.chat",
   ];
   for (const t of topics) {
     await bus.subscribe(t, (e: Event) => {
-      // eslint-disable-next-line no-console
-      console.log(`[flux:event] ${e.topic}  src=${e.source}`);
       mainWindow?.webContents.send("flux:event", e);
     });
   }
@@ -59,9 +50,6 @@ async function mirrorEventsToRenderer(): Promise<void> {
 
 async function bootKernel(): Promise<void> {
   await mirrorEventsToRenderer();
-
-  // Gap 2: capability enforcement — generate project keypair, sign + verify
-  // the OpenOCD agent manifest before allowing it to start (plan #13).
   const { privatePem: priv, publicPem: pub } = generateKeyPair();
   const openocdManifest = parseManifest(JSON.stringify({
     identity: { name: "openocd-task", tier: "c", version: "0.1.0" },
@@ -75,15 +63,11 @@ async function bootKernel(): Promise<void> {
   }));
   signManifest(openocdManifest, priv);
   const capOk = verifyManifest(openocdManifest, pub);
-  console.log(`[kernel] capability: openocd manifest ${capOk ? "verified ✓" : "FAILED ✗"}`);
-  if (!capOk) console.error("[kernel] SECURITY: proceeding anyway (v1 dev mode)");
+  console.log(`[kernel] capability: ${capOk ? "verified ✓" : "FAILED ✗"}`);
 
-  // Python brain — supervised subprocess, uORB over Node IPC.
   const brainTransport = new NodeIpcTransport(bus);
-  // NodeIpcTransport.start spawns directly; track via supervisor for lifecycle logs.
   brainTransport.start(BRAIN_PY, ["-m", BRAIN_MODULE], { PYTHONPATH: BRAIN_PATH });
 
-  // OpenOCD embodied agent: real (HPM OpenOCD + HPM6E00 board) or mock.
   const ocd = new OpenOcdAgent(bus);
   if (process.env["FLUX_OPENOCD_REAL"] === "1") {
     const ocdBin = process.env["FLUX_OPENOCD_BIN"] ?? "/tmp/hpm-openocd/src/openocd";
@@ -93,26 +77,20 @@ async function bootKernel(): Promise<void> {
     await ocd.startReal(ocdBin, ocdCfg, sdkBase)
       .then(() => console.log("[kernel] OpenOCD real mode: HPM6E00 connected"))
       .catch((e) => {
-        console.error("[kernel] OpenOCD real mode failed, falling back to mock:", e.message);
+        console.error("[kernel] OpenOCD real failed, mock fallback:", e.message);
         void ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch(() => void 0);
       });
   } else {
-    await ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd] start failed:", e));
+    await ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd]", e.message));
   }
 
-  // When the brain publishes a workflow DAG, dispatch its cmd.* steps in order
-  // (decision #20: TS dispatches the flow Python produced). The brain's
-  // openocd.event reaction handles characterize + devready.commit.
   const runner = new WorkflowRunner(bus);
   await bus.subscribe("workflow.published", (e: Event) => {
-    void runner
-      .run(e.data as unknown as WorkflowDescriptor)
-      .catch((err) => console.error("[workflow] run failed:", err));
+    void runner.run(e.data as unknown as WorkflowDescriptor)
+      .catch((err) => console.error("[workflow]", err));
   });
-  void scheduler; // scheduler wired for ad-hoc tasks; workflow steps dispatch directly via the bus.
+  void scheduler;
 
-  // Gap 6: alarm preempt demo — after the first asset commit, publish a test
-  // alarm.critical to demonstrate the priority system (plan verification step 9).
   let alarmDemoed = false;
   await bus.subscribe("asset.committed", async () => {
     if (alarmDemoed) return;
@@ -120,43 +98,114 @@ async function bootKernel(): Promise<void> {
     setTimeout(async () => {
       await bus.publish({
         source: "kernel", kind: "execute", topic: "alarm.critical",
-        data: { source: "kernel", code: "test-alarm",
-                message: "post-commit test alarm (priority preempt demo)" },
+        data: { source: "kernel", code: "test-alarm", message: "priority preempt demo" },
         trace_id: "alarm-demo",
       });
-      console.log("[kernel] alarm demo: published alarm.critical (p90)");
     }, 2000);
   });
 }
 
+function buildMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: "File", submenu: [
+      { label: "Open Folder…", accelerator: "CmdOrCtrl+O", click: async () => {
+        const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+        if (!result.canceled && result.filePaths.length > 0) {
+          mainWindow?.webContents.send("flux:folderOpened", result.filePaths[0]);
+        }
+      }},
+      { type: "separator" },
+      { label: "Quit", accelerator: "CmdOrCtrl+Q", role: "quit" },
+    ]},
+    { label: "Edit", role: "editMenu" },
+    { label: "View", submenu: [
+      { label: "Toggle DevTools", accelerator: "F12", role: "toggleDevTools" },
+    ]},
+    { label: "Terminal", submenu: [
+      { label: "New Terminal", click: () => console.log("[menu] terminal (TODO)") },
+    ]},
+    { label: "Help", submenu: [
+      { label: "About Flux Studio" },
+    ]},
+  ]);
+}
+
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
-    width: 1440, height: 900, autoHideMenuBar: true,
+    width: 1440, height: 900,
+    autoHideMenuBar: false,
+    title: "Flux Studio",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
     },
   });
+  Menu.setApplicationMenu(buildMenu());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
   });
-  const devUrl = process.env["ELECTRON_RENDERER_URL"] ?? process.env["FLUX_DEV_URL"];
+  const devUrl = process.env["ELECTRON_RENDERER_URL"];
   if (devUrl) await mainWindow.loadURL(devUrl);
   else await mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 }
 
+// ── IPC handlers ──
 ipcMain.handle("flux:status", async () => ({ ok: true, ready: true }));
-ipcMain.on("flux:subscribe", () => {
-  /* renderer signals interest; events already mirrored via flux:event */
-});
 ipcMain.handle("flux:chat", async (_evt, text: string) => {
-  await bus.publish({
-    source: "ui", kind: "execute", topic: "cmd.chat",
-    data: { text }, trace_id: `chat-${Date.now()}`,
+  await bus.publish({ source: "ui", kind: "execute", topic: "cmd.chat",
+    data: { text }, trace_id: `chat-${Date.now()}` });
+});
+
+ipcMain.handle("flux:readDir", async (_evt, dirPath: string) => {
+  try {
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    return entries
+      .filter((e) => !e.name.startsWith(".") && !e.name.startsWith("node_modules"))
+      .map((e) => ({
+        name: e.name,
+        isDir: e.isDirectory(),
+        ext: e.isFile() ? path.extname(e.name).slice(1) : "",
+      }));
+  } catch { return []; }
+});
+
+ipcMain.handle("flux:readFile", async (_evt, filePath: string) => {
+  try { return readFileSync(filePath, "utf-8"); }
+  catch { return ""; }
+});
+
+ipcMain.handle("flux:writeFile", async (_evt, filePath: string, content: string) => {
+  writeFileSync(filePath, content, "utf-8");
+});
+
+ipcMain.handle("flux:openFolder", async () => {
+  const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+
+ipcMain.handle("flux:condaList", async () => {
+  return new Promise((resolve) => {
+    exec("conda env list --json", (err, stdout) => {
+      if (err) { resolve([]); return; }
+      try {
+        const data = JSON.parse(stdout);
+        resolve((data.envs || []).map((p: string) => ({
+          name: p.split("/").pop() || "base",
+          path: p,
+        })));
+      } catch { resolve([]); }
+    });
   });
 });
 
+ipcMain.handle("flux:condaCreate", async (_evt, name: string) => {
+  return new Promise((resolve, reject) => {
+    exec(`conda create -n ${name} -y`, (err) => err ? reject(err) : resolve(undefined));
+  });
+});
+
+// ── app lifecycle ──
 app.whenReady().then(async () => {
   await bootKernel().catch((e) => console.error("[kernel] boot failed:", e));
   await createWindow();
