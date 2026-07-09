@@ -262,6 +262,16 @@ def main() -> int:
                 })
             except Exception:  # noqa: BLE001
                 log.warning("asset store commit failed (non-fatal)")
+            # also commit to FLUXmeme .flux format (if available)
+            try:
+                from flux_brain.fluxmeme_store import commit_asset as flux_commit, is_available
+                if is_available():
+                    flux_path = flux_commit("hpm6e00-bringup-001", characterization,
+                                           ["device-profile", "driver", "bench"], branch.id)
+                    if flux_path:
+                        log.info("FLUXmeme .flux written: %s", flux_path)
+            except Exception:  # noqa: BLE001
+                pass  # non-fatal
             log.info("devready commit: %s", branch.brief())
 
     bus.subscribe("openocd.event", on_openocd)
