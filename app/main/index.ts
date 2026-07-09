@@ -66,7 +66,14 @@ async function bootKernel(): Promise<void> {
   console.log(`[kernel] capability: ${capOk ? "verified ✓" : "FAILED ✗"}`);
 
   const brainTransport = new NodeIpcTransport(bus);
-  brainTransport.start(BRAIN_PY, ["-m", BRAIN_MODULE], { PYTHONPATH: BRAIN_PATH });
+  brainTransport.start(BRAIN_PY, ["-m", BRAIN_MODULE], {
+    PYTHONPATH: BRAIN_PATH,
+    NO_PROXY: "127.0.0.1,localhost",
+    no_proxy: "127.0.0.1,localhost",
+    https_proxy: "",
+    http_proxy: "",
+    all_proxy: "",
+  });
 
   const ocd = new OpenOcdAgent(bus);
   if (process.env["FLUX_OPENOCD_REAL"] === "1") {
