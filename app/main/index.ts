@@ -66,8 +66,9 @@ async function bootKernel(): Promise<void> {
   console.log(`[kernel] capability: ${capOk ? "verified ✓" : "FAILED ✗"}`);
 
   const brainTransport = new NodeIpcTransport(bus);
-  brainTransport.start(BRAIN_PY, ["-m", BRAIN_MODULE], {
+  brainTransport.start(BRAIN_PY, ["-u", "-m", BRAIN_MODULE], {
     PYTHONPATH: BRAIN_PATH,
+    PYTHONUNBUFFERED: "1",
     NO_PROXY: "127.0.0.1,localhost",
     no_proxy: "127.0.0.1,localhost",
     https_proxy: "",
@@ -132,6 +133,13 @@ function buildMenu(): Menu {
       { label: "New Terminal", click: () => console.log("[menu] terminal (TODO)") },
     ]},
     { label: "Help", submenu: [
+      { label: "Architecture Plan (Wiki)", click: () => {
+        mainWindow?.webContents.send("flux:openWiki", "/home/exuber/CORE/CORE27/plan.md");
+      }},
+      { label: "Usage Guide", click: () => {
+        mainWindow?.webContents.send("flux:openWiki", "/home/exuber/CORE/CORE27/FLUXworkbench/USAGE.md");
+      }},
+      { type: "separator" },
       { label: "About Flux Studio" },
     ]},
   ]);

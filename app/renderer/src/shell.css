@@ -68,6 +68,37 @@ html,body,#root{height:100%;background:var(--paper);color:var(--ink);font-family
 
 /* ── 中央 chat ── */
 .chat-area{grid-area:center;display:flex;flex-direction:column;overflow:hidden;background:var(--paper)}
+
+/* center tabs */
+.center-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;height:32px}
+.center-tab{padding:6px 14px;cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--grey-3);
+  border-bottom:2px solid transparent;text-transform:uppercase;letter-spacing:.04em}
+.center-tab:hover{color:var(--ink)}
+.center-tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
+
+/* embed view (FluxWeave/UnitPort) */
+.embed-view{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.embed-iframe{flex:1;border:none;width:100%;background:var(--paper)}
+.embed-hint{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);
+  padding:4px 12px;font-size:10px;font-family:var(--mono);border-radius:3px;pointer-events:none;opacity:.8}
+
+/* wiki view */
+.wiki-view{flex:1;overflow-y:auto;padding:24px 5vw;font-size:13px;line-height:1.7;color:var(--ink)}
+.wiki-view h1{font-weight:300;font-size:24px;letter-spacing:-.02em;margin:16px 0 8px;border-bottom:2px solid var(--accent);padding-bottom:4px}
+.wiki-view h2{font-weight:500;font-size:18px;margin:14px 0 6px;border-bottom:1px solid var(--border);padding-bottom:3px}
+.wiki-view h3{font-weight:600;font-size:14px;margin:12px 0 4px;color:var(--accent)}
+.wiki-view p{margin:6px 0}
+.wiki-view strong{font-weight:600}
+.wiki-view code{font-family:var(--mono);font-size:12px;background:var(--grey-1);padding:1px 4px;border-radius:2px}
+.wiki-view .code-block{display:block;background:var(--ink);color:#e0e0e0;padding:12px;margin:8px 0;border-radius:4px;overflow-x:auto;font-size:12px;line-height:1.5}
+.wiki-view a{color:var(--accent);text-decoration:none}
+.wiki-view a:hover{text-decoration:underline}
+.wiki-view table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}
+.wiki-view td{border:1px solid var(--border);padding:4px 8px}
+.wiki-view tr:first-child td{font-weight:600;background:var(--grey-1)}
+.wiki-view ul{margin:4px 0 4px 20px}
+.wiki-view li{margin:2px 0}
+.wiki-view hr{border:none;border-top:1px solid var(--border);margin:16px 0}
 .chat-messages{flex:1;overflow-y:auto;padding:16px 5vw}
 .chat-msg{display:flex;gap:8px;margin-bottom:12px;font-size:13px;line-height:1.6}
 .chat-role{font-weight:700;min-width:16px}

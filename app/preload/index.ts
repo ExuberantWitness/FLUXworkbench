@@ -79,6 +79,11 @@ const api = {
   status(): Promise<unknown> {
     return ipcRenderer.invoke("flux:status");
   },
+  onOpenWiki(cb: (path: string) => void): () => void {
+    const handler = (_: unknown, path: string): void => cb(path);
+    ipcRenderer.on("flux:openWiki", handler);
+    return () => ipcRenderer.off("flux:openWiki", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("flux", api);

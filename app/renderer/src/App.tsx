@@ -39,6 +39,9 @@ export function App() {
   const [fluxAssets, setFluxAssets] = useState<{id:string;path:string;kind:string;records:number}[]>([]);
   const [building, setBuilding] = useState(false);
   const [buildResult, setBuildResult] = useState("");
+  // ── center tabs ──
+  const [centerTab, setCenterTab] = useState<"chat" | "fluxweave" | "unitport" | "wiki">("chat");
+  const [wikiContent, setWikiContent] = useState("");
   // ── context menu state ──
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: TreeNode | null; isRoot: boolean } | null>(null);
   const [renaming, setRenaming] = useState<{ node: TreeNode; newName: string } | null>(null);
@@ -69,6 +72,14 @@ export function App() {
   useEffect(() => { void loadDir(projectPath).then(setTreeRoot); }, [projectPath, loadDir]);
   useEffect(() => { void window.flux?.condaList?.().then((e: CondaEnv[]) => { setCondaEnvs(e); }).catch(() => void 0); }, []);
   useEffect(() => { void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0); }, [events.filter(e=>e.topic==="asset.committed").length]);
+
+  // ── wiki (from Help menu via preload) ──
+  useEffect(() => {
+    const off = window.flux?.onOpenWiki?.((path: string) => {
+      void window.flux?.readFile?.(path).then((c: string) => { setWikiContent(c); setCenterTab("wiki"); });
+    });
+    return () => off?.();
+  }, []);
 
   const state = useMemo(() => deriveState(events), [events]);
 
@@ -169,9 +180,33 @@ export function App() {
         creating={creating} setCreating={setCreating} doCreate={doCreate} refreshTree={refreshTree}
         apiConfig={apiConfig} setApiConfig={setApiConfig} switchProvider={switchProvider} />
       <div className="resize-bar resize-l" onMouseDown={startDrag("left")} />
-      <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
-        fileContent={fileContent} activeFile={activeFile} saveFile={saveFile} state={state} />
-      <div className="resize-bar resize-r" onMouseDown={startDrag("right")} />
+      <main className="chat-area">
+        <div className="center-tabs">
+          <div className={`center-tab ${centerTab === "chat" ? "on" : ""}`} onClick={() => setCenterTab("chat")}>💬 Chat</div>
+          <div className={`center-tab ${centerTab === "fluxweave" ? "on" : ""}`} onClick={() => setCenterTab("fluxweave")}>🧵 FluxWeave</div>
+          <div className={`center-tab ${centerTab === "unitport" ? "on" : ""}`} onClick={() => setCenterTab("unitport")}>🤖 UnitPort</div>
+          {wikiContent && <div className={`center-tab ${centerTab === "wiki" ? "on" : ""}`} onClick={() => setCenterTab("wiki")}>📖 Plan</div>}
+        </div>
+        {centerTab === "chat" && (
+          <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
+            fileContent={fileContent} activeFile={activeFile} saveFile={saveFile} state={state} />
+        )}
+        {centerTab === "fluxweave" && (
+          <div className="embed-view">
+            <iframe src="http://127.0.0.1:7860" className="embed-iframe" title="FluxWeave" />
+            <div className="embed-hint">FluxWeave URDF Authoring — run: cd FluxWeave && python FluxhWeave_Workbench.py</div>
+          </div>
+        )}
+        {centerTab === "unitport" && (
+          <div className="embed-view">
+            <iframe src="http://127.0.0.1:7861" className="embed-iframe" title="UnitPort" />
+            <div className="embed-hint">UnitPort RL Training — run: cd UnitPort && python -m src.application.ui</div>
+          </div>
+        )}
+        {centerTab === "wiki" && wikiContent && (
+          <div className="wiki-view" dangerouslySetInnerHTML={{ __html: mdToHtml(wikiContent) }} />
+        )}
+      </main>
       <RightPanel events={events} state={state} fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild}
         rawEvents={events} />
       <Footer state={state} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
@@ -553,6 +588,40 @@ function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-expli
 }
 
 // ── helpers ──
+function mdToHtml(md: string): string {
+  let html = md
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    // code blocks
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="code-block">$2</code></pre>')
+    // headers
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // bold/italic/code
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    // tables (simple pipe tables)
+    .replace(/^\|(.+)\|$/gm, (match) => {
+      const cells = match.split("|").filter((c) => c.trim());
+      if (cells.every((c) => /^[-:\s]+$/.test(c.trim()))) return "";
+      const tds = cells.map((c) => `<td>${c.trim()}</td>`).join("");
+      return `<tr>${tds}</tr>`;
+    })
+    .replace(/(<tr>[\s\S]*?<\/tr>\s*)+/g, (m) => `<table>${m}</table>`)
+    // lists
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>[\s\S]*?<\/li>)/g, "<ul>$1</ul>")
+    // horizontal rules
+    .replace(/^---+$/gm, "<hr/>")
+    // paragraphs (double newline)
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/^(?!<)/gm, "");
+  return `<div class="wiki-content"><p>${html}</p></div>`;
+}
+
 function topicColor(topic: string): string {
   if (topic.startsWith("alarm")) return "#ff4444";
   if (topic.startsWith("device")) return "#ff8800";
