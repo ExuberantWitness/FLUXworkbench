@@ -31,13 +31,16 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "brain", "to": "brain" },
+      { "from": "brain", "to": "brain", "filter": ["**/*", "!.venv/**", "!**/__pycache__/**"] },
       { "from": "bus", "to": "bus" }
     ],
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Development",
       "executableName": "fluxworkbench"
-    }
+    },
+    "publish": [
+      { "provider": "github", "owner": "ExuberantWitness", "repo": "FLUXworkbench" }
+    ]
   }
 }

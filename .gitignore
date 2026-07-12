@@ -105,3 +105,4 @@ brain/vendor/openrath/
 # Capability keys (per-install; never commit)
 .flux/keys/
 
+release/

@@ -1,6 +1,7 @@
 // Flux Studio — kernel entry (Electron main process = Tier 1 base).
 
 import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from "electron";
+import { autoUpdater } from "electron-updater";
 import * as path from "node:path";
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, unlinkSync, rmSync, renameSync } from "node:fs";
 import { exec } from "node:child_process";
@@ -208,14 +209,8 @@ async function createWindow(): Promise<void> {
 
 // ── IPC handlers ──
 ipcMain.handle("flux:status", async () => ({ ok: true, ready: true }));
-ipcMain.handle("flux:chat", async (_evt, text: string) => {
-  await bus.publish({ source: "ui", kind: "execute", topic: "cmd.chat",
-    data: { text }, trace_id: `chat-${Date.now()}` });
-});
-ipcMain.handle("flux:setApi", async (_evt, config: Record<string, string>) => {
-  await bus.publish({ source: "ui", kind: "execute", topic: "cmd.set_api",
-    data: config, trace_id: `api-${Date.now()}` });
-});
+// flux:chat / flux:setApi are registered in bootKernel (MCP-routed) — the old
+// bus-published versions were removed to avoid double ipcMain.handle registration.
 
 ipcMain.handle("flux:readDir", async (_evt, dirPath: string) => {
   try {
@@ -306,9 +301,23 @@ ipcMain.handle("flux:build", async (_evt: any, sampleDir: string) => {
   });
 });
 
+// ── auto-update (GitHub Releases via electron-updater) ──
+// Only AppImage self-updates on Linux; deb installs update through apt/dpkg.
+function setupAutoUpdate(): void {
+  if (!app.isPackaged) return;
+  if (process.platform === "linux" && !process.env["APPIMAGE"]) return;
+  autoUpdater.on("error", (e) => console.warn("[update]", e.message));
+  autoUpdater.on("update-available", (info) =>
+    console.log(`[update] v${info.version} available — downloading in background`));
+  autoUpdater.on("update-downloaded", (info) =>
+    console.log(`[update] v${info.version} downloaded — will install on quit`));
+  void autoUpdater.checkForUpdatesAndNotify();
+}
+
 app.whenReady().then(async () => {
   await bootKernel().catch((e) => console.error("[kernel] boot failed:", e));
   await createWindow();
+  setupAutoUpdate();
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) await createWindow();
   });

@@ -61,6 +61,19 @@ export class MCPOrchestrator {
     this.servers.set(config.name, proc);
     this.buffers.set(config.name, "");
 
+    // Wire stdout → JSON-RPC message handler BEFORE the first request,
+    // or the initialize response is dropped and the handshake times out.
+    proc.stdout?.setEncoding("utf-8");
+    proc.stdout?.on("data", (chunk: string) => this.onStdout(config.name, chunk));
+    proc.stderr?.on("data", (b: Buffer) =>
+      console.warn(`[mcp:${config.name}:stderr] ${b.toString().trimEnd()}`));
+
+    proc.on("exit", (code) => {
+      console.warn(`[mcp] ${config.name} exited code=${code}`);
+      this.servers.delete(config.name);
+      this.tools = this.tools.filter((t) => t.server !== config.name);
+    });
+
     // Initialize MCP handshake
     await this.send(config.name, "initialize", {
       protocolVersion: "2025-11-25",
@@ -77,18 +90,6 @@ export class MCPOrchestrator {
     for (const t of serverTools) {
       this.tools.push({ ...t, server: config.name });
     }
-
-    // Wire stdout → JSON-RPC message handler
-    proc.stdout?.setEncoding("utf-8");
-    proc.stdout?.on("data", (chunk: string) => this.onStdout(config.name, chunk));
-    proc.stderr?.on("data", (b: Buffer) =>
-      console.warn(`[mcp:${config.name}:stderr] ${b.toString().trimEnd()}`));
-
-    proc.on("exit", (code) => {
-      console.warn(`[mcp] ${config.name} exited code=${code}`);
-      this.servers.delete(config.name);
-      this.tools = this.tools.filter((t) => t.server !== config.name);
-    });
 
     console.log(`[mcp] ${config.name} started with ${serverTools.length} tools`);
   }

@@ -69,4 +69,22 @@ pnpm --filter @fluxworkbench/app build
 
 Verified: `electron-vite build` produces `out/{main,preload,renderer}`; `dev` launches a full Electron process tree (8 procs) with the React+Monaco renderer served at `:5173`.
 
+## Release (GitHub Releases + auto-update)
+
+Distribution: **AppImage + deb on GitHub Releases**, built by [`release-v2.yml`](.github/workflows/release-v2.yml).
+
+```bash
+# 1. bump the version electron-updater compares against
+#    (app/package.json "version")
+# 2. tag & push — CI builds and publishes the release
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+Auto-update (electron-updater, wired in `app/main/index.ts`):
+- **AppImage** — checks GitHub Releases on launch, downloads in background, installs on quit.
+- **deb** — no self-update (apt semantics); users install the new deb.
+- Update check is skipped in dev (`!app.isPackaged`) and on non-AppImage Linux installs.
+
+Local packaging without publishing: `npx electron-builder --linux AppImage --publish never` → `release/`.
+
 *v0 (main): Python flux-runtime + vendored openwork + single-file UI — superseded.*
