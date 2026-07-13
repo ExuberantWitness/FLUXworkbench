@@ -4,6 +4,7 @@ import { HilPanel } from "./HilPanel";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { FluxWeavePanel } from "./FluxWeavePanel";
 import { UnitPortPanel } from "./UnitPortPanel";
+import { useLang } from "./i18n";
 
 interface FluxEvent { source: string; kind: string; topic: string; data: Record<string, unknown>; trace_id: string }
 interface ChatMsg { role: "user" | "agent"; text: string; codeBlock?: string }
@@ -27,6 +28,7 @@ const PROVIDER_PRESETS: Record<string, { endpoint: string; model: string; label:
 };
 
 export function App() {
+  const { t } = useLang();
   const [events, setEvents] = useState<FluxEvent[]>([]);
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -194,11 +196,11 @@ export function App() {
       <div className="resize-bar resize-l" onMouseDown={startDrag("left")} />
       <main className="chat-area">
         <div className="center-tabs">
-          <div className={`center-tab ${centerTab === "chat" ? "on" : ""}`} onClick={() => setCenterTab("chat")}>💬 Chat</div>
-          <div className={`center-tab ${centerTab === "fluxweave" ? "on" : ""}`} onClick={() => setCenterTab("fluxweave")}>🧵 FluxWeave</div>
-          <div className={`center-tab ${centerTab === "unitport" ? "on" : ""}`} onClick={() => setCenterTab("unitport")}>🤖 UnitPort</div>
-          <div className={`center-tab ${centerTab === "hil" ? "on" : ""}`} onClick={() => setCenterTab("hil")}>🧪 HIL</div>
-          {wikiContent && <div className={`center-tab ${centerTab === "wiki" ? "on" : ""}`} onClick={() => setCenterTab("wiki")}>📖 Plan</div>}
+          <div className={`center-tab ${centerTab === "chat" ? "on" : ""}`} onClick={() => setCenterTab("chat")}>{t("tab.chat")}</div>
+          <div className={`center-tab ${centerTab === "fluxweave" ? "on" : ""}`} onClick={() => setCenterTab("fluxweave")}>{t("tab.fluxweave")}</div>
+          <div className={`center-tab ${centerTab === "unitport" ? "on" : ""}`} onClick={() => setCenterTab("unitport")}>{t("tab.unitport")}</div>
+          <div className={`center-tab ${centerTab === "hil" ? "on" : ""}`} onClick={() => setCenterTab("hil")}>{t("tab.hil")}</div>
+          {wikiContent && <div className={`center-tab ${centerTab === "wiki" ? "on" : ""}`} onClick={() => setCenterTab("wiki")}>{t("tab.plan")}</div>}
         </div>
         {centerTab === "chat" && (
           <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
@@ -213,7 +215,7 @@ export function App() {
         <div onClick={() => setProblemsOpen(!problemsOpen)}
           style={{ borderTop: "1px solid var(--ink, #333)", padding: "3px 12px", fontSize: 10, cursor: "pointer",
                    fontFamily: "var(--mono, monospace)", color: "var(--grey-3, #888)", userSelect: "none", flexShrink: 0 }}>
-          {problemsOpen ? "▾" : "▴"} PROBLEMS · {events.filter((e) => e.topic === "build.diagnostic").length} diagnostics · {events.filter((e) => e.topic === "triage.result").length} triage
+          {problemsOpen ? "▾" : "▴"} {t("prob.title")} · {events.filter((e) => e.topic === "build.diagnostic").length} {t("prob.diagnostics")} · {events.filter((e) => e.topic === "triage.result").length} {t("prob.triage")}
         </div>
         {problemsOpen && (
           <div style={{ height: 220, flexShrink: 0, borderTop: "1px solid #222" }}>
@@ -296,6 +298,7 @@ function ContextMenu({ ctxMenu, closeCtx, refreshTree, doDelete, copyPath, copyR
 
 // ═══ Left Sidebar ═══
 function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { t } = useLang();
   const { tab, setTab, events, state, treeRoot, toggleFolder, activeFile, openFile,
     customOpen, setCustomOpen, projectPath, setProjectPath, onContextMenu, renaming, setRenaming, doRename,
     creating, setCreating, doCreate, refreshTree, apiConfig, setApiConfig, switchProvider } = props;
@@ -347,7 +350,7 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
       <div className="custom-section">
         {/* API Provider (cc-switch style) */}
         <div className="custom-h" onClick={() => setCustomOpen(customOpen === "api" ? null : "api")}>
-          {customOpen === "api" ? "▾" : "▸"} API Provider
+          {customOpen === "api" ? "▾" : "▸"} {t("side.api")}
         </div>
         {customOpen === "api" && (
           <div style={{ padding: "4px 8px" }}>
@@ -359,19 +362,19 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
               </div>
             ))}
             <div style={{ marginTop: 6 }}>
-              <div className="custom-item"><span className="lbl-sm">Endpoint</span><input type="text" value={apiConfig.endpoint} onChange={(e) => setApiConfig({ ...apiConfig, endpoint: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} /></div>
-              <div className="custom-item"><span className="lbl-sm">Model</span><input type="text" value={apiConfig.model} onChange={(e) => setApiConfig({ ...apiConfig, model: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} /></div>
-              <div className="custom-item"><span className="lbl-sm">API Key</span><input type="password" value={apiConfig.apiKey} onChange={(e) => setApiConfig({ ...apiConfig, apiKey: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} placeholder="(optional)" /></div>
+              <div className="custom-item"><span className="lbl-sm">{t("side.endpoint")}</span><input type="text" value={apiConfig.endpoint} onChange={(e) => setApiConfig({ ...apiConfig, endpoint: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} /></div>
+              <div className="custom-item"><span className="lbl-sm">{t("side.model")}</span><input type="text" value={apiConfig.model} onChange={(e) => setApiConfig({ ...apiConfig, model: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} /></div>
+              <div className="custom-item"><span className="lbl-sm">{t("side.apikey")}</span><input type="password" value={apiConfig.apiKey} onChange={(e) => setApiConfig({ ...apiConfig, apiKey: e.target.value })} onBlur={() => window.flux?.sendSetApi?.(apiConfig)} placeholder="(optional)" /></div>
             </div>
           </div>
         )}
         {/* Other customizations */}
         {[
-          { id: "workflow", label: "Workflow", items: state.workflow?.steps.map((s:any)=>`${s.name}: ${s.op}`) ?? ["(none)"] },
-          { id: "agents", label: "Agents", items: ["openocd-task", "brain-agent"] },
-          { id: "skills", label: "Skills (ClawhHub)", items: ["characterize", "codegen", "schematic→netlist", "+ Install from ClawhHub"] },
-          { id: "mcp", label: "MCP Servers", items: ["(v2) dimos", "(v2) scp"] },
-          { id: "tools", label: "Tools", items: ["riscv GCC", "HPM_SDK", "HPM OpenOCD"] },
+          { id: "workflow", label: t("side.workflow"), items: state.workflow?.steps.map((s:any)=>`${s.name}: ${s.op}`) ?? ["(none)"] },
+          { id: "agents", label: t("side.agents"), items: ["openocd-task", "brain-agent"] },
+          { id: "skills", label: t("side.skills"), items: ["characterize", "codegen", "schematic→netlist", "+ Install from ClawhHub"] },
+          { id: "mcp", label: t("side.mcp"), items: ["(v2) dimos", "(v2) scp"] },
+          { id: "tools", label: t("side.tools"), items: ["riscv GCC", "HPM_SDK", "HPM OpenOCD"] },
         ].map((s) => (
           <div key={s.id}>
             <div className="custom-h" onClick={() => setCustomOpen(customOpen === s.id ? null : s.id)}>{customOpen === s.id ? "▾" : "▸"} {s.label}</div>
@@ -423,6 +426,7 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
 
 // ═══ Right Panel ═══
 function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { t } = useLang();
   const { events, state, fluxAssets, building, buildResult, doBuild, rawEvents } = props;
   const ocdEvents = events.filter((e: FluxEvent) => e.topic === "openocd.event").slice(-3);
   const assets = events.filter((e: FluxEvent) => e.topic === "asset.committed");
@@ -551,15 +555,15 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
         </div>
       </div>
       <div className="rp-section">
-        <div className="rp-h">Cross-Compile</div>
-        <button className="chat-send" style={{ width: "100%", marginBottom: 4 }} disabled={building} onClick={doBuild}>{building?"Building…":"▶ Build (flash_xip)"}</button>
+        <div className="rp-h">{t("rp.build")}</div>
+        <button className="chat-send" style={{ width: "100%", marginBottom: 4 }} disabled={building} onClick={doBuild}>{building ? t("rp.building") : t("rp.buildBtn")}</button>
         {buildResult && <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", wordBreak: "break-all" }}>{buildResult.slice(0,200)}</div>}
       </div>
       <div className="rp-section">
-        <div className="rp-h">DevReady Assets</div>
+        <div className="rp-h">{t("rp.assets")}</div>
         <div className="kpi-row">
-          <div className="kpi-cell"><div className="lbl">Events</div><div className="nb">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Assets</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
+          <div className="kpi-cell"><div className="lbl">{t("rp.events")}</div><div className="nb">{assets.length}</div></div>
+          <div className="kpi-cell"><div className="lbl">{t("rp.assetCount")}</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
         </div>
         {fluxAssets?.map((a: any, i: number) => (
           <div key={i} className="rp-card">
@@ -575,10 +579,12 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
 
 // ═══ Footer ═══
 function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { t, lang, setLang } = useLang();
   const { state, condaEnvs, condaActive, setCondaActive, condaDropdown, setCondaDropdown } = props;
   return (
     <footer className="footbar">
-      <div className="stage">device <b>{state.deviceAttached ? (state.real?"REAL":"mock") : "—"}</b></div><span className="arr">→</span>
+      <div className="stage" onClick={() => setLang(lang === "zh" ? "en" : "zh")} title="switch language" style={{ cursor: "pointer" }}><b>{lang === "zh" ? "中" : "EN"}</b></div><span className="arr">·</span>
+      <div className="stage">{t("foot.device")} <b>{state.deviceAttached ? (state.real?"REAL":"mock") : "—"}</b></div><span className="arr">→</span>
       <div className="stage">brain <b>{state.brainReady?"ready":"..."}</b></div><span className="arr">→</span>
       <div className="stage">assets <b>{state.assets}</b></div>
       <div className="spacer" />

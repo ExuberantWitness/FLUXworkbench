@@ -1,6 +1,7 @@
 // HIL panel — natural language → asset-derived test plan → run on mock|real|sim.
 // Live step lights come from hil.step bus events; the final report from flux:hilRun.
 import React, { useMemo, useState } from "react";
+import { useLang } from "./i18n";
 
 interface FluxEvent { topic: string; data: Record<string, unknown>; trace_id: string }
 
@@ -20,6 +21,7 @@ const LIGHT: Record<string, string> = {
 };
 
 export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElement {
+  const { t } = useLang();
   const [goal, setGoal] = useState("Verify the flashed firmware toggles the PC13 LED and the chip identity is STM32F103");
   const [planText, setPlanText] = useState("");
   const [generated, setGenerated] = useState<boolean | null>(null);
@@ -76,25 +78,25 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, overflow: "auto", height: "100%" }}>
       <div style={{ display: "flex", gap: 6 }}>
         <input value={goal} onChange={(e) => setGoal(e.target.value)}
-          placeholder="Describe what the firmware must do…"
+          placeholder={t("hil.goalPh")}
           style={{ flex: 1, background: "var(--grey-6, #1e1e1e)", color: "inherit", border: "1px solid #333", borderRadius: 4, padding: "6px 8px", fontSize: 12 }} />
-        <button className="chat-send" onClick={() => void doGenerate()}>⚡ Generate Plan</button>
-        <button className="chat-send" onClick={() => void loadTemplate()}>📄 Template</button>
+        <button className="chat-send" onClick={() => void doGenerate()}>{t("hil.generate")}</button>
+        <button className="chat-send" onClick={() => void loadTemplate()}>{t("hil.template")}</button>
       </div>
       {generated !== null && (
         <div style={{ fontSize: 11, color: generated ? "#4caf50" : "#ff9800" }}>
-          {generated ? "plan generated from register-map asset" : "(template plan — LLM unavailable)"}
+          {generated ? t("hil.fromAsset") : t("hil.fromTemplate")}
           {plan?.source_assets?.length ? ` · source assets: ${plan.source_assets.join(", ")}` : ""}
           {genError && <span style={{ color: "#f44336" }}> · {genError.slice(0, 160)}</span>}
         </div>
       )}
       <div style={{ display: "flex", gap: 8, flex: 1, minHeight: 0 }}>
         <textarea value={planText} onChange={(e) => setPlanText(e.target.value)}
-          placeholder='Test plan JSON (flux.hil.plan/v1) — generate one or paste here'
+          placeholder={t("hil.planPh")}
           style={{ flex: 1, fontFamily: "var(--mono, monospace)", fontSize: 11, background: "var(--grey-6, #161616)", color: "inherit", border: "1px solid #333", borderRadius: 4, padding: 8, resize: "none" }} />
         <div style={{ width: 300, overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
           <button className="chat-send" disabled={!plan || running} onClick={() => void doRun()}>
-            {running ? "⏳ Running…" : `▶ Run (${plan?.target?.backend ?? "?"})`}
+            {running ? t("hil.running") : `${t("hil.run")} (${plan?.target?.backend ?? "?"})`}
           </button>
           {plan?.steps?.map((s: { id: string; type: string }) => {
             const st = report?.steps.find((r) => r.id === s.id)?.status ?? liveSteps.get(s.id) ?? (running ? "running" : "");
@@ -120,7 +122,7 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
                   {s.id}: {s.assertion!.op} expected={JSON.stringify(s.assertion!.expected)} actual={JSON.stringify(s.assertion!.actual)}
                 </div>
               ))}
-              <div style={{ fontSize: 10, color: "#666", marginTop: 4 }}>report committed as hil-report asset · runId {report.runId}</div>
+              <div style={{ fontSize: 10, color: "#666", marginTop: 4 }}>{t("hil.reportNote")} · runId {report.runId}</div>
             </div>
           )}
         </div>

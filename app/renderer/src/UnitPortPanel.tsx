@@ -3,6 +3,7 @@
 // the run itself is a kernel-scheduled subprocess whose stdout events arrive
 // on the bus as training.* topics (live metrics below).
 import React, { useEffect, useMemo, useState } from "react";
+import { useLang } from "./i18n";
 
 interface FluxEvent { topic: string; data: Record<string, unknown>; trace_id: string }
 interface Template { name: string; backend: string; path: string }
@@ -10,6 +11,7 @@ interface Template { name: string; backend: string; path: string }
 const mono: React.CSSProperties = { fontFamily: "var(--mono, monospace)", fontSize: 11 };
 
 export function UnitPortPanel({ events }: { events: FluxEvent[] }): React.ReactElement {
+  const { t } = useLang();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [specText, setSpecText] = useState("");
   const [issues, setIssues] = useState<string[]>([]);
@@ -72,32 +74,32 @@ export function UnitPortPanel({ events }: { events: FluxEvent[] }): React.ReactE
     <div style={{ display: "flex", gap: 10, padding: 12, height: "100%", overflow: "hidden", fontSize: 11 }}>
       <div style={{ width: 240, display: "flex", flexDirection: "column", gap: 6, overflow: "auto" }}>
         <button className="chat-send" disabled={busy === "templates"} onClick={() => void loadTemplates()}>
-          {busy === "templates" ? "…" : "📦 Load Templates"}
+          {busy === "templates" ? "…" : t("up.load")}
         </button>
-        {templates.map((t) => (
-          <div key={t.path} className="rp-card" style={{ cursor: "pointer" }} onClick={() => void compileTemplate(t.name)}>
-            <div style={{ fontWeight: 600 }}>{busy === t.name ? "compiling…" : t.name}</div>
-            <div style={{ color: "#666" }}>{t.backend}</div>
+        {templates.map((tp) => (
+          <div key={tp.path} className="rp-card" style={{ cursor: "pointer" }} onClick={() => void compileTemplate(tp.name)}>
+            <div style={{ fontWeight: 600 }}>{busy === tp.name ? t("up.compiling") : tp.name}</div>
+            <div style={{ color: "#666" }}>{tp.backend}</div>
           </div>
         ))}
         {error && <div style={{ color: "#f44336" }}>{error}</div>}
 
         <div style={{ borderTop: "1px solid #2a2a2a", marginTop: 8, paddingTop: 8 }}>
-          <div style={{ color: "#888", fontWeight: 600, marginBottom: 4 }}>ISAAC SIM 6 / ISAACLAB</div>
-          {gpu === null ? <div style={{ color: "#555" }}>detecting GPU…</div> : gpu.present ? (
+          <div style={{ color: "#888", fontWeight: 600, marginBottom: 4 }}>{t("up.isaac")}</div>
+          {gpu === null ? <div style={{ color: "#555" }}>{t("up.detecting")}</div> : gpu.present ? (
             <div style={{ ...mono, color: gpu.driverOk ? "#4caf50" : "#ff9800" }}>
-              ✓ {gpu.name} · {gpu.vram} · driver {gpu.driver}{gpu.driverOk ? "" : " (<580, 建议升级)"}
+              ✓ {gpu.name} · {gpu.vram} · driver {gpu.driver}{gpu.driverOk ? "" : t("up.driverLow")}
             </div>
           ) : (
-            <div style={{ color: "#f44336" }}>✗ 未检测到 NVIDIA 显卡 — Isaac Sim 需要 RTX GPU</div>
+            <div style={{ color: "#f44336" }}>{t("up.noGpu")}</div>
           )}
           <button className="chat-send" style={{ width: "100%", marginTop: 6 }}
             disabled={!gpu?.present || installing}
             onClick={() => { setInstalling(true); void flux.isaacInstall(); }}>
-            {installing ? "⏳ Installing… (~10GB)" : "⬇ 一键安装 Isaac Sim 6 + IsaacLab"}
+            {installing ? t("up.installing") : t("up.install")}
           </button>
           {installing && <button className="chat-send" style={{ width: "100%", marginTop: 4 }}
-            onClick={() => void flux.isaacCancel()}>■ Cancel Install</button>}
+            onClick={() => void flux.isaacCancel()}>{t("up.cancelInstall")}</button>}
           {installLog.map((l, i) => (
             <div key={i} style={{ ...mono, fontSize: 10, color: l.startsWith("[ERR]") ? "#f44336" : l.startsWith("[OK]") ? "#4caf50" : "#888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}</div>
           ))}
@@ -105,21 +107,21 @@ export function UnitPortPanel({ events }: { events: FluxEvent[] }): React.ReactE
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-        <div style={{ color: "#888", fontWeight: 600 }}>TRAINING SPEC
-          {issues.length > 0 && <span style={{ color: "#ff9800" }}> · {issues.length} issues</span>}
+        <div style={{ color: "#888", fontWeight: 600 }}>{t("up.spec")}
+          {issues.length > 0 && <span style={{ color: "#ff9800" }}> · {issues.length} {t("up.issues")}</span>}
         </div>
         {issues.slice(0, 3).map((s, i) => <div key={i} style={{ color: "#ff9800" }}>⚠ {s.slice(0, 120)}</div>)}
         <textarea value={specText} onChange={(e) => setSpecText(e.target.value)}
-          placeholder="pick a template on the left, or paste a TrainingSpec JSON"
+          placeholder={t("up.specPh")}
           style={{ flex: 1, ...mono, background: "var(--grey-6, #161616)", color: "inherit", border: "1px solid #333", borderRadius: 4, padding: 8, resize: "none" }} />
         <div style={{ display: "flex", gap: 6 }}>
-          <button className="chat-send" disabled={!specText || (!!runId && !finished)} onClick={() => void startRun()}>▶ Train (kernel)</button>
-          {runId && !finished && <button className="chat-send" onClick={() => void flux.trainCancel(runId)}>■ Cancel</button>}
+          <button className="chat-send" disabled={!specText || (!!runId && !finished)} onClick={() => void startRun()}>{t("up.train")}</button>
+          {runId && !finished && <button className="chat-send" onClick={() => void flux.trainCancel(runId)}>{t("up.cancel")}</button>}
         </div>
       </div>
 
       <div style={{ width: 280, display: "flex", flexDirection: "column", gap: 4, overflow: "auto" }}>
-        <div style={{ color: "#888", fontWeight: 600 }}>RUN {runId && <span style={{ color: finished ? "#4caf50" : "#2196f3" }}>{runId} {finished ? "· done" : "· live"}</span>}</div>
+        <div style={{ color: "#888", fontWeight: 600 }}>{t("up.run")} {runId && <span style={{ color: finished ? "#4caf50" : "#2196f3" }}>{runId} {finished ? t("up.done") : t("up.live")}</span>}</div>
         {progress && (
           <div style={mono}>progress: {String((progress.data as Record<string, unknown>)["text"] ?? JSON.stringify(progress.data).slice(0, 80))}</div>
         )}
@@ -128,7 +130,7 @@ export function UnitPortPanel({ events }: { events: FluxEvent[] }): React.ReactE
             {JSON.stringify(m.data).slice(0, 90)}
           </div>
         ))}
-        {!runId && <div style={{ color: "#555" }}>training.metrics events stream here once a run starts</div>}
+        {!runId && <div style={{ color: "#555" }}>{t("up.metricsHint")}</div>}
       </div>
     </div>
   );
