@@ -106,3 +106,11 @@ brain/vendor/openrath/
 .flux/keys/
 
 release/
+
+# local toolchains/simulators (multi-hundred-MB, machine-local)
+vendor/renode*
+vendor/arm-gcc*
+firmware/**/*.elf
+vendor/integrations/
+vendor/zephyrproject/
+brain/vendor/datasheets/

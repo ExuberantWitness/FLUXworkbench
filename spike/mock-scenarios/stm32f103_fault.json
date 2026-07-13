@@ -1,0 +1,17 @@
+{
+  "description": "Fault board: firmware flashes fine but GPIOC clock was never enabled — PC13 ODR never toggles. Build+flash all green, behavior assert red.",
+  "regs": {
+    "pc": "0x08000130",
+    "sp": "0x20005000"
+  },
+  "mem": {
+    "0xE0042000": "0x20036410",
+    "0x40013800": "0x000000c0",
+    "0x40013808": "0x00000000",
+    "0x4001100C": "0x00000000"
+  },
+  "sequences": {},
+  "flash_effects": {
+    "mem": { "0x40013808": "0x00000341" }
+  }
+}

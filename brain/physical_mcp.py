@@ -17,9 +17,17 @@ logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 log = logging.getLogger("physical")
 
 OPENOCD_BIN = os.environ.get("FLUX_OPENOCD_BIN", "/tmp/hpm-openocd/src/openocd")
-OPENOCD_CFG = os.environ.get("FLUX_OPENOCD_CFG", "/home/exuber/hpm_sdk/boards/openocd/hpm6e00_all_in_one.cfg")
 HPM_SDK_BASE = os.environ.get("HPM_SDK_BASE", "/home/exuber/hpm_sdk")
 REAL_MODE = os.environ.get("FLUX_OPENOCD_REAL", "0") == "1"
+
+# board -> openocd cfg map; set_target switches at runtime (phase 6)
+BOARD_CFGS = {
+    "hpm6e00evk": f"{HPM_SDK_BASE}/boards/openocd/hpm6e00_all_in_one.cfg",
+    "stm32_min_dev": "interface/stlink.cfg -f target/stm32f1x.cfg",
+    "nucleo_f103rb": "board/st_nucleo_f103rb.cfg",
+}
+_target_board = os.environ.get("FLUX_TARGET_BOARD", "hpm6e00evk")
+OPENOCD_CFG = os.environ.get("FLUX_OPENOCD_CFG", BOARD_CFGS[_target_board])
 
 # ── OpenOCD TCL RPC client ──
 _openocd_proc = None
@@ -66,11 +74,21 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "openocd.reset", "description": "Reset the target board.",
      "inputSchema": {"type": "object", "properties": {"run": {"type": "boolean", "default": True}}}},
+    {"name": "set_target", "description": "Switch the debug target board (openocd cfg selection).",
+     "inputSchema": {"type": "object", "properties": {"board": {"type": "string"}}, "required": ["board"]}},
     {"name": "openocd.measure", "description": "Measure board response (read vendor ID, clock, peripherals).",
      "inputSchema": {"type": "object", "properties": {"metric": {"type": "string", "description": "What to measure"}}}},
 ]
 
 def handle_tool(name: str, args: dict) -> dict:
+    global OPENOCD_CFG, _target_board
+    if name == "set_target":
+        board = args["board"]
+        if board not in BOARD_CFGS:
+            return {"content": [{"type": "text", "text": f"unknown board: {board}; known: {list(BOARD_CFGS)}"}]}
+        _target_board, OPENOCD_CFG = board, BOARD_CFGS[board]
+        log.info(f"target board -> {board} ({OPENOCD_CFG})")
+        return {"content": [{"type": "text", "text": f"target set to {board}"}]}
     if name == "openocd.read_reg":
         result = _openocd_cmd(f"reg {args['reg']}")
         return {"content": [{"type": "text", "text": result}]}

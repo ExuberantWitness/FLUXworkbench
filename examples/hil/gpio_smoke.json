@@ -1,0 +1,24 @@
+{
+  "schema": "flux.hil.plan/v1",
+  "name": "gpio-smoke",
+  "goal": "Verify chip identity and that flashed firmware toggles the PC13 LED",
+  "target": { "backend": "mock", "board": "stm32f103-bluepill", "chip": "STM32F103xx" },
+  "source_assets": ["regmap-stm32f103xx-1d92b65a"],
+  "steps": [
+    { "id": "flash", "type": "flash", "deps": [],
+      "params": { "elf": "firmware/blinky.elf" } },
+    { "id": "idcode", "type": "probe", "deps": ["flash"],
+      "params": { "op": "read_mem", "addr": "0xE0042000" } },
+    { "id": "check_id", "type": "assert", "deps": ["idcode"],
+      "params": { "expr": { "lhs": "$idcode.value", "op": "mask_eq", "mask": 4095, "rhs": 1040 },
+                  "message": "DBGMCU_IDCODE dev_id == 0x410 (STM32F103 medium-density)" } },
+    { "id": "p1", "type": "probe", "deps": ["flash"],
+      "params": { "op": "read_mem", "addr": "0x4001100C" } },
+    { "id": "w1", "type": "wait", "deps": ["p1"], "params": { "ms": 200 } },
+    { "id": "p2", "type": "probe", "deps": ["w1"],
+      "params": { "op": "read_mem", "addr": "0x4001100C" } },
+    { "id": "toggle", "type": "assert", "deps": ["p1", "p2"],
+      "params": { "expr": { "lhs": "$p1.value", "op": "ne", "rhs": "$p2.value" },
+                  "message": "GPIOC ODR toggles after flash (PC13 LED blinking)" } }
+  ]
+}

@@ -60,13 +60,47 @@ const api = {
   openFolder(): Promise<string | null> {
     return ipcRenderer.invoke("flux:openFolder");
   },
-  // ── build (cross-compile) ──
-  build(sampleDir: string): Promise<{ ok: boolean; elf?: string; error?: string; log?: string }> {
-    return ipcRenderer.invoke("flux:build", sampleDir);
+  // ── build (cross-compile: hpm cmake | zephyr west) ──
+  build(sampleDir: string, opts?: { toolchain?: "hpm" | "zephyr"; board?: string; pristine?: boolean }): Promise<{ ok: boolean; elf?: string; dts?: string; error?: string; log?: string }> {
+    return ipcRenderer.invoke("flux:build", sampleDir, opts);
   },
   // ── flux assets ──
-  listFluxAssets(): Promise<Array<{ id: string; path: string; kind: string; records: number }>> {
+  listFluxAssets(): Promise<Array<{ id: string; ts: number; type: string; components: string[] }>> {
     return ipcRenderer.invoke("flux:listAssets");
+  },
+  // ── generic MCP tool call (asset flywheel entry point) ──
+  mcpCall(tool: string, args: Record<string, unknown>): Promise<string> {
+    return ipcRenderer.invoke("flux:mcpCall", tool, args);
+  },
+  // ── HIL (asset-driven test plans on mock|real|sim backends) ──
+  hilGenerate(goal: string, opts?: { chip?: string; board?: string; backend?: string }): Promise<{ plan: unknown; generated: boolean; error?: string }> {
+    return ipcRenderer.invoke("flux:hilGenerate", goal, opts);
+  },
+  hilRun(plan: unknown): Promise<unknown> {
+    return ipcRenderer.invoke("flux:hilRun", plan);
+  },
+  triage(text: string, ctx?: Record<string, unknown>): Promise<unknown> {
+    return ipcRenderer.invoke("flux:triage", text, ctx);
+  },
+  // ── UnitPort training (kernel-scheduled subprocess) ──
+  trainStart(spec: Record<string, unknown>): Promise<string> {
+    return ipcRenderer.invoke("flux:trainStart", spec);
+  },
+  trainCancel(runId: string): Promise<boolean> {
+    return ipcRenderer.invoke("flux:trainCancel", runId);
+  },
+  trainList(): Promise<Array<{ runId: string; startedAt: number }>> {
+    return ipcRenderer.invoke("flux:trainList");
+  },
+  // ── Isaac Sim 6 ──
+  gpuInfo(): Promise<{ present: boolean; name?: string; driver?: string; vram?: string; driverOk?: boolean }> {
+    return ipcRenderer.invoke("flux:gpuInfo");
+  },
+  isaacInstall(): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke("flux:isaacInstall");
+  },
+  isaacCancel(): Promise<boolean> {
+    return ipcRenderer.invoke("flux:isaacCancel");
   },
   // ── conda ──
   condaList(): Promise<CondaEnv[]> {

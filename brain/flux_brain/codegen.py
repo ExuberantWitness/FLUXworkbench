@@ -92,3 +92,79 @@ def generate_board_init(config: dict[str, Any]) -> dict[str, str]:
         + "\n#endif"
     )
     return files
+
+
+# ── Asset-driven backends (pain point ①: CubeMX replacement, register truth
+#    from the asset store instead of hand-written templates) ─────────────────
+
+def gen_register_init(regmap_slice: dict[str, Any], config: dict[str, Any] | None = None) -> str:
+    """Register-level C init emitted from a register-map asset slice.
+    Every address/mask comes from the asset (SVD/datasheet provenance)."""
+    config = config or {}
+    dev = regmap_slice.get("device", {}).get("name", "unknown")
+    src = regmap_slice.get("asset_id", "?")
+    lines = [
+        f"/* {dev} register-level init — generated from asset {src}.",
+        " * Addresses, offsets and field masks are asset-backed (zero hallucination). */",
+        "#include <stdint.h>",
+        "#define REG(a) (*(volatile uint32_t *)(a))",
+        "",
+    ]
+    for p in regmap_slice.get("peripherals", []):
+        base = p.get("base_address")
+        if not base:
+            continue
+        pname = p["name"]
+        lines.append(f"/* {pname} @ {base} — {p.get('description', '')[:60]} */")
+        lines.append(f"#define {pname}_BASE {base}u")
+        for r in p.get("registers", [])[:12]:
+            off = r.get("offset") or "0x0"
+            lines.append(f"#define {pname}_{r['name']} REG({pname}_BASE + {off})")
+            for f in r.get("fields", [])[:8]:
+                mask = ((1 << f["bit_width"]) - 1) << f["bit_offset"]
+                lines.append(f"#define {pname}_{r['name']}_{f['name']}_MASK 0x{mask:08X}u")
+        lines.append("")
+        lines.append(f"void {pname.lower()}_init(void) {{")
+        for r in p.get("registers", []):
+            rv = r.get("reset_value")
+            if rv and config.get("emit_reset_writes"):
+                lines.append(f"    REG({pname}_BASE + {r.get('offset', '0x0')}) = {rv}u; /* reset: {r['name']} */")
+        init = config.get("writes", {}).get(pname, [])
+        for w in init:
+            lines.append(f"    REG({pname}_BASE + {w['offset']}) = {w['value']}u; /* {w.get('why', '')} */")
+        lines.append("}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def gen_zephyr_overlay(regmap_slice: dict[str, Any], config: dict[str, Any] | None = None) -> dict[str, str]:
+    """Zephyr-flavoured output: devicetree overlay + prj.conf fragment.
+    In the Zephyr world the CubeMX replacement is declarative config, not C."""
+    config = config or {}
+    parts_overlay = []
+    parts_conf = ["# generated from register-map asset " + regmap_slice.get("asset_id", "?")]
+    for p in regmap_slice.get("peripherals", []):
+        label = p["name"].lower()
+        parts_overlay.append(
+            f"&{label} {{\n    status = \"okay\";\n"
+            + (f"    current-speed = <{config.get('baud', 115200)}>;\n" if "USART" in p["name"].upper() or "UART" in p["name"].upper() else "")
+            + "};")
+        if "USART" in p["name"].upper() or "UART" in p["name"].upper():
+            parts_conf.append("CONFIG_SERIAL=y")
+        if "GPIO" in p["name"].upper():
+            parts_conf.append("CONFIG_GPIO=y")
+    return {
+        "app.overlay": "/* generated from asset " + regmap_slice.get("asset_id", "?") + " */\n" + "\n\n".join(parts_overlay) + "\n",
+        "prj.conf": "\n".join(dict.fromkeys(parts_conf)) + "\n",
+    }
+
+
+def gen_from_regmap(regmap_slice: dict[str, Any], backend: str = "register",
+                    config: dict[str, Any] | None = None) -> dict[str, str]:
+    """Dispatch: register-map asset slice → generated files by backend."""
+    if backend == "zephyr_dts":
+        return gen_zephyr_overlay(regmap_slice, config)
+    if backend == "hpm_sdk":
+        return generate_board_init(config or {})
+    name = regmap_slice.get("peripherals", [{}])[0].get("name", "periph").lower()
+    return {f"board_{name}.c": gen_register_init(regmap_slice, config)}

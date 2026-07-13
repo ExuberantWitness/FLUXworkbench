@@ -10,6 +10,10 @@ import { Scheduler } from "./kernel/scheduler";
 import { Supervisor } from "./kernel/supervisor";
 import { NodeIpcTransport } from "./kernel/transports/node-ipc";
 import { MCPOrchestrator } from "./mcp_orchestrator";
+import { runBuild } from "./build_service";
+import { HilRunner } from "./kernel/hil_runner";
+import { TrainingAgent } from "./kernel/agents/training";
+import { validatePlan, type HilTestPlan } from "./kernel/hil_types";
 import { OpenOcdAgent } from "./kernel/agents/openocd";
 import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runner";
 import { generateKeyPair, signManifest, verifyManifest, parseManifest } from "./kernel/capability";
@@ -35,6 +39,26 @@ const bus = new InProcessBus();
 const scheduler = new Scheduler();
 const supervisor = new Supervisor();
 let mainWindow: BrowserWindow | null = null;
+let mcpRef: MCPOrchestrator | null = null;
+
+/** Sentinel triage: error text → structured hypothesis, published as triage.result. */
+async function runTriage(logText: string, source: string, context: Record<string, unknown>): Promise<unknown> {
+  if (!mcpRef) return null;
+  try {
+    // HIL-run failures triage at the Hil band (50) — ahead of queued chat (30).
+    const result = await mcpRef.callTool("triage", { log: logText, source, context }, source === "hil" ? 50 : 30);
+    const text = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text ?? "{}";
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    await bus.publish({
+      source: "sentinel", kind: "error", topic: "triage.result",
+      data: parsed, trace_id: `triage-${Date.now()}`,
+    });
+    return parsed;
+  } catch (e) {
+    console.warn("[triage]", (e as Error).message);
+    return null;
+  }
+}
 
 async function mirrorEventsToRenderer(): Promise<void> {
   const topics = [
@@ -42,6 +66,10 @@ async function mirrorEventsToRenderer(): Promise<void> {
     "alarm.policy-violation",
     "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
     "agent.event", "run.state", "workflow.published", "cmd.chat", "cmd.set_api",
+    "hil.plan", "hil.step", "hil.report", "triage.result", "sim.state",
+    "training.started", "training.progress", "training.metrics",
+    "training.finished", "training.error", "training.log",
+    "install.progress",
   ];
   for (const t of topics) {
     await bus.subscribe(t, (e: Event) => {
@@ -117,6 +145,111 @@ async function bootKernel(): Promise<void> {
     await mcp.callTool("set_api_config", config);
   });
   ipcMain.handle("flux:mcpTools", async () => mcp.listTools());
+
+  // UnitPort MCP server (canvas→spec compile + registries) under its own 3.11 venv
+  const unitportPy = process.env["FLUX_UNITPORT_PY"]
+    ?? path.join(repoRoot(), "vendor", "integrations", ".venv-unitport", "bin", "python");
+  if (existsSync(unitportPy)) {
+    await mcp.startServer({
+      name: "unitport",
+      command: unitportPy,
+      args: ["-u", path.join(repoRoot(), "brain", "unitport_mcp.py")],
+      env: { PYTHONUNBUFFERED: "1" },
+    }).catch((e) => console.error("[mcp] unitport failed:", e.message));
+  }
+
+  // Isaac Sim 6 Skills/MCP (optional): attach an installed instance's MCP server.
+  // e.g. FLUX_ISAACSIM_MCP="/home/user/isaacsim6/.venv/bin/python -m isaacsim.mcp_server"
+  const isaacMcp = process.env["FLUX_ISAACSIM_MCP"];
+  if (isaacMcp) {
+    const [cmd, ...cmdArgs] = isaacMcp.split(" ");
+    await mcp.startServer({ name: "isaacsim", command: cmd!, args: cmdArgs, env: {} })
+      .catch((e) => console.error("[mcp] isaacsim failed:", e.message));
+  }
+
+  // TrainingAgent: kernel-scheduled RL runs (spawn sb3_entry, tail stdout → bus)
+  const training = new TrainingAgent(bus);
+  ipcMain.handle("flux:trainStart", async (_evt, spec: Record<string, unknown>) => training.start(spec));
+  ipcMain.handle("flux:trainCancel", async (_evt, runId: string) => training.cancel(runId));
+  ipcMain.handle("flux:trainList", async () => training.list());
+
+  mcpRef = mcp;
+  ipcMain.handle("flux:triage", async (_evt, logText: string, context?: Record<string, unknown>) =>
+    runTriage(logText, "manual", context ?? {}));
+
+  // ── HIL runner (asset-driven plans, mock|real|sim DeviceBackend) ──
+  const hil = new HilRunner(bus, (sampleDir) => runBuild(sampleDir, bus));
+  ipcMain.handle("flux:hilRun", async (_evt, plan: HilTestPlan) => {
+    const report = await hil.run(plan);
+    // Flywheel write-back: the report itself becomes a devready asset.
+    try {
+      const text = await mcp.callTool("commit_asset", {
+        // background band: report write-back never blocks interactive calls
+        asset_id: `hilreport-${report.runId}`,
+        type: "hil-report",
+        source: { kind: "hil-run", board: report.board, mode: report.mode },
+        components: [report.board, report.planName],
+        characterization: { summary: report.summary, goal: report.goal, steps: report.steps },
+      }, 10);
+      void text;
+      await bus.publish({
+        source: "hil-runner", kind: "execute", topic: "asset.committed",
+        data: { asset_id: `hilreport-${report.runId}`, type: "hil-report" },
+        trace_id: report.runId,
+      });
+    } catch (e) {
+      console.warn("[hil] report asset commit failed:", (e as Error).message);
+    }
+    // Behavior-level triage: flash/build green but asserts red → why?
+    if (report.summary.verdict === "FAIL") {
+      const failures = report.steps
+        .filter((s) => s.status !== "pass" && s.status !== "skipped")
+        .map((s) => `step ${s.id} (${s.type}) ${s.status}: ${JSON.stringify(s.assertion ?? s.detail)}`)
+        .join("\n");
+      void runTriage(
+        `HIL run ${report.runId} FAILED on ${report.board} (${report.mode}) — goal: ${report.goal}\n${failures}`,
+        "hil",
+        { board: report.board, plan: report.planName },
+      );
+    }
+    return report;
+  });
+
+  ipcMain.handle("flux:hilGenerate", async (_evt, goal: string, opts?: { chip?: string; board?: string; backend?: string }) => {
+    try {
+      const result = await mcp.callTool("gen_test_plan", { goal, ...(opts ?? {}) });
+      const text = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text ?? "";
+      const plan = JSON.parse(text) as HilTestPlan;
+      const errs = validatePlan(plan);
+      if (errs.length) throw new Error(`generated plan invalid: ${errs.join("; ")}`);
+      return { plan, generated: true };
+    } catch (e) {
+      // Deterministic fallback: canned template, flagged so the UI shows "(template)".
+      const tplPath = path.join(repoRoot(), "examples", "hil", "gpio_smoke.json");
+      const plan = JSON.parse(readFileSync(tplPath, "utf8")) as HilTestPlan;
+      return { plan, generated: false, error: (e as Error).message };
+    }
+  });
+
+  // Generic MCP tool invocation from the renderer. Commit/ingest tools get their
+  // asset relayed onto the bus as asset.committed so the UI flywheel lights up.
+  ipcMain.handle("flux:mcpCall", async (_evt, tool: string, args: Record<string, unknown>) => {
+    const result = await mcp.callTool(tool, args ?? {});
+    const text = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text ?? "";
+    if (tool === "commit_asset" || tool.startsWith("ingest_")) {
+      try {
+        const parsed = JSON.parse(text) as { asset_id?: string; type?: string; components?: string[] };
+        if (parsed.asset_id) {
+          await bus.publish({
+            source: "flux-insight", kind: "execute", topic: "asset.committed",
+            data: { asset_id: parsed.asset_id, type: parsed.type ?? (args?.["type"] as string) ?? "", tool },
+            trace_id: `asset-${Date.now()}`,
+          });
+        }
+      } catch { /* non-JSON tool output — no asset to relay */ }
+    }
+    return text;
+  });
 
   const ocd = new OpenOcdAgent(bus);
   if (process.env["FLUX_OPENOCD_REAL"] === "1") {
@@ -271,10 +404,9 @@ ipcMain.handle("flux:condaList", async () => {
 ipcMain.handle("flux:listAssets", async () => {
   const { exec } = require("child_process");
   return new Promise((resolve) => {
-    const py = process.env["FLUX_BRAIN_PY"] ?? "python3";
-    const mod = process.env["FLUXMEME_PATH"] ?? "/home/exuber/CORE/CORE27/FLUXmeme/python";
-    exec(`${py} -c "import sys;sys.path.insert(0,);from fluxmeme_store_proxy import list_all;import json;print(json.dumps(list_all()))"`,
-      { env: { ...process.env, PYTHONPATH: process.env["FLUX_BRAIN_PATH"] ?? "", FLUXMEME_PATH: mod } },
+    const py = process.env["FLUX_BRAIN_PY"] ?? path.join(repoRoot(), "brain", ".venv", "bin", "python");
+    exec(`${py} -c "from flux_brain import asset_store;import json;print(json.dumps(asset_store.list_assets()))"`,
+      { env: { ...process.env, PYTHONPATH: process.env["FLUX_BRAIN_PATH"] ?? path.join(repoRoot(), "brain") } },
       (err: Error | null, stdout: string) => { try { resolve(JSON.parse(stdout.trim())); } catch { resolve([]); } });
   });
 });
@@ -286,19 +418,65 @@ ipcMain.handle("flux:condaCreate", async (_evt, name: string) => {
 });
 
 // ── app lifecycle ──
-ipcMain.handle("flux:build", async (_evt: any, sampleDir: string) => {
+// ── GPU detection + Isaac Sim 6 one-click install ──
+ipcMain.handle("flux:gpuInfo", async () => {
   return new Promise((resolve) => {
-    const toolchain = process.env["GNURISCV_TOOLCHAIN_PATH"] ?? "/opt/riscv";
-    const sdk = process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk";
-    const buildDir = "/tmp/flux-build-" + Date.now();
-    exec(`mkdir -p ${buildDir} && cd ${buildDir} && cmake -DBOARD=hpm6e00evk -DHPM_SDK_BASE=${sdk} -DHPM_BUILD_TYPE=flash_xip ${sampleDir} && make -j4`,
-      { env: { ...process.env, GNURISCV_TOOLCHAIN_PATH: toolchain, HPM_SDK_BASE: sdk, PATH: `${toolchain}/bin:${process.env.PATH}` } },
-      (err, stdout, stderr) => {
-        if (err) { resolve({ ok: false, error: stderr.slice(-500) }); return; }
-        const elf = `${buildDir}/output/demo.elf`;
-        resolve({ ok: true, elf, buildDir, log: stdout.slice(-500) });
+    exec("nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader",
+      (err, stdout) => {
+        if (err || !stdout.trim()) { resolve({ present: false }); return; }
+        const [name, driver, vram] = stdout.trim().split("\n")[0]!.split(",").map((s) => s.trim());
+        resolve({ present: true, name, driver, vram, driverOk: parseInt(driver ?? "0", 10) >= 580 });
       });
   });
+});
+
+let isaacInstallProc: import("node:child_process").ChildProcess | null = null;
+ipcMain.handle("flux:isaacInstall", async () => {
+  if (isaacInstallProc) return { ok: false, error: "install already running" };
+  const { spawn: spawnProc } = require("node:child_process") as typeof import("node:child_process");
+  const script = path.join(repoRoot(), "scripts", "install_isaacsim6.sh");
+  const proc = spawnProc("bash", [script], { env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
+  isaacInstallProc = proc;
+  const emit = (line: string): void => {
+    void bus.publish({ source: "isaac-installer", kind: "execute", topic: "install.progress",
+      data: { line }, trace_id: "isaac6" });
+  };
+  let buf = "";
+  proc.stdout.setEncoding("utf8");
+  proc.stdout.on("data", (c: string) => {
+    buf += c;
+    let i: number;
+    while ((i = buf.indexOf("\n")) >= 0) { const l = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (l) emit(l); }
+  });
+  proc.stderr.on("data", (b: Buffer) => emit(`[ERR] ${b.toString().trim().slice(0, 200)}`));
+  proc.on("exit", (code) => { isaacInstallProc = null; emit(`[EXIT] code=${code}`); });
+  return { ok: true };
+});
+ipcMain.handle("flux:isaacCancel", async () => {
+  isaacInstallProc?.kill("SIGTERM");
+  return isaacInstallProc !== null;
+});
+
+ipcMain.handle("flux:build", async (_evt: any, sampleDir: string, opts?: { toolchain?: "hpm" | "zephyr"; board?: string; pristine?: boolean }) => {
+  const result = await runBuild(sampleDir, bus, opts ?? {});
+  if (!result.ok) {
+    void runTriage(result.log ?? result.error ?? "", "build", { sampleDir, board: opts?.board });
+  } else if (result.dts && mcpRef) {
+    // Build-time flywheel: every zephyr build auto-ingests its flattened devicetree.
+    void mcpRef.callTool("ingest_dts", { dts_path: result.dts, board: result.board ?? "" }, 10)
+      .then((r) => {
+        const text = (r as { content?: Array<{ text?: string }> })?.content?.[0]?.text ?? "{}";
+        const parsed = JSON.parse(text) as { asset_id?: string };
+        if (parsed.asset_id) {
+          void bus.publish({
+            source: "build-service", kind: "execute", topic: "asset.committed",
+            data: { asset_id: parsed.asset_id, type: "devicetree" }, trace_id: `dts-${Date.now()}`,
+          });
+        }
+      })
+      .catch((e) => console.warn("[build] dts ingest failed:", (e as Error).message));
+  }
+  return result;
 });
 
 // ── auto-update (GitHub Releases via electron-updater) ──

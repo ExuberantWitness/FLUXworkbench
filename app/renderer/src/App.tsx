@@ -1,5 +1,9 @@
 // Flux Studio — VScode-like Explorer + drag resize + cc-switch providers + clawhub
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { HilPanel } from "./HilPanel";
+import { ProblemsPanel } from "./ProblemsPanel";
+import { FluxWeavePanel } from "./FluxWeavePanel";
+import { UnitPortPanel } from "./UnitPortPanel";
 
 interface FluxEvent { source: string; kind: string; topic: string; data: Record<string, unknown>; trace_id: string }
 interface ChatMsg { role: "user" | "agent"; text: string; codeBlock?: string }
@@ -17,7 +21,8 @@ const PROVIDER_PRESETS: Record<string, { endpoint: string; model: string; label:
   vllm: { endpoint: "http://127.0.0.1:8000", model: "openbmb/MiniCPM-V-4.6", label: "Local vLLM" },
   openai: { endpoint: "https://api.openai.com/v1", model: "gpt-4o", label: "OpenAI" },
   anthropic: { endpoint: "https://api.anthropic.com", model: "claude-sonnet-5-20250929", label: "Anthropic Claude" },
-  deepseek: { endpoint: "https://api.deepseek.com/v1", model: "deepseek-chat", label: "DeepSeek" },
+  deepseek: { endpoint: "https://api.deepseek.com/v1", model: "deepseek-v4-flash", label: "DeepSeek" },
+  mimo: { endpoint: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5", label: "Xiaomi MiMo" },
   custom: { endpoint: "", model: "", label: "Custom" },
 };
 
@@ -36,11 +41,12 @@ export function App() {
   const [condaDropdown, setCondaDropdown] = useState(false);
   const [customOpen, setCustomOpen] = useState<string | null>("api");
   const [apiConfig, setApiConfig] = useState({ provider: "vllm", endpoint: "http://127.0.0.1:8000", apiKey: "", model: "openbmb/MiniCPM-V-4.6" });
-  const [fluxAssets, setFluxAssets] = useState<{id:string;path:string;kind:string;records:number}[]>([]);
+  const [fluxAssets, setFluxAssets] = useState<{id:string;ts:number;type:string;components:string[]}[]>([]);
   const [building, setBuilding] = useState(false);
   const [buildResult, setBuildResult] = useState("");
   // ── center tabs ──
-  const [centerTab, setCenterTab] = useState<"chat" | "fluxweave" | "unitport" | "wiki">("chat");
+  const [centerTab, setCenterTab] = useState<"chat" | "fluxweave" | "unitport" | "wiki" | "hil">("chat");
+  const [problemsOpen, setProblemsOpen] = useState(false);
   const [wikiContent, setWikiContent] = useState("");
   // ── context menu state ──
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: TreeNode | null; isRoot: boolean } | null>(null);
@@ -72,6 +78,8 @@ export function App() {
   useEffect(() => { void loadDir(projectPath).then(setTreeRoot); }, [projectPath, loadDir]);
   useEffect(() => { void window.flux?.condaList?.().then((e: CondaEnv[]) => { setCondaEnvs(e); }).catch(() => void 0); }, []);
   useEffect(() => { void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0); }, [events.filter(e=>e.topic==="asset.committed").length]);
+  const triageCount = events.filter((e) => e.topic === "triage.result").length;
+  useEffect(() => { if (triageCount > 0) setProblemsOpen(true); }, [triageCount]);
 
   // ── wiki (from Help menu via preload) ──
   useEffect(() => {
@@ -94,6 +102,9 @@ export function App() {
     if (node.isDir) return;
     setActiveFile(node.name); setActiveFilePath(node.path);
     try { setFileContent(await window.flux?.readFile?.(node.path)); } catch { setFileContent("(cannot read)"); }
+  };
+  const openFileByPath = (p: string): void => {
+    void openFile({ name: p.split("/").pop() ?? p, path: p, isDir: false } as TreeNode);
   };
   const saveFile = async (content: string) => { if (activeFilePath) await window.flux?.writeFile?.(activeFilePath, content); };
 
@@ -144,7 +155,8 @@ export function App() {
     const preset = PROVIDER_PRESETS[provider] ?? PROVIDER_PRESETS.custom!;
     const newConfig = { provider, endpoint: preset!.endpoint, model: preset!.model, apiKey: apiConfig.apiKey };
     setApiConfig(newConfig);
-    void window.flux?.sendSetApi?.(newConfig);
+    // mimo is the multimodal model — switching it targets the vision channel
+    void window.flux?.sendSetApi?.(provider === "mimo" ? { ...newConfig, target: "vision" } : newConfig);
   };
   // ── build ──
   const doBuild = async () => {
@@ -185,26 +197,28 @@ export function App() {
           <div className={`center-tab ${centerTab === "chat" ? "on" : ""}`} onClick={() => setCenterTab("chat")}>💬 Chat</div>
           <div className={`center-tab ${centerTab === "fluxweave" ? "on" : ""}`} onClick={() => setCenterTab("fluxweave")}>🧵 FluxWeave</div>
           <div className={`center-tab ${centerTab === "unitport" ? "on" : ""}`} onClick={() => setCenterTab("unitport")}>🤖 UnitPort</div>
+          <div className={`center-tab ${centerTab === "hil" ? "on" : ""}`} onClick={() => setCenterTab("hil")}>🧪 HIL</div>
           {wikiContent && <div className={`center-tab ${centerTab === "wiki" ? "on" : ""}`} onClick={() => setCenterTab("wiki")}>📖 Plan</div>}
         </div>
         {centerTab === "chat" && (
           <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
             fileContent={fileContent} activeFile={activeFile} saveFile={saveFile} state={state} />
         )}
-        {centerTab === "fluxweave" && (
-          <div className="embed-view">
-            <iframe src="http://127.0.0.1:7860" className="embed-iframe" title="FluxWeave" />
-            <div className="embed-hint">FluxWeave URDF Authoring — run: cd FluxWeave && python FluxhWeave_Workbench.py</div>
-          </div>
-        )}
-        {centerTab === "unitport" && (
-          <div className="embed-view">
-            <iframe src="http://127.0.0.1:7861" className="embed-iframe" title="UnitPort" />
-            <div className="embed-hint">UnitPort RL Training — run: cd UnitPort && python -m src.application.ui</div>
-          </div>
-        )}
+        {centerTab === "fluxweave" && <FluxWeavePanel />}
+        {centerTab === "unitport" && <UnitPortPanel events={events} />}
+        {centerTab === "hil" && <HilPanel events={events} />}
         {centerTab === "wiki" && wikiContent && (
           <div className="wiki-view" dangerouslySetInnerHTML={{ __html: mdToHtml(wikiContent) }} />
+        )}
+        <div onClick={() => setProblemsOpen(!problemsOpen)}
+          style={{ borderTop: "1px solid var(--ink, #333)", padding: "3px 12px", fontSize: 10, cursor: "pointer",
+                   fontFamily: "var(--mono, monospace)", color: "var(--grey-3, #888)", userSelect: "none", flexShrink: 0 }}>
+          {problemsOpen ? "▾" : "▴"} PROBLEMS · {events.filter((e) => e.topic === "build.diagnostic").length} diagnostics · {events.filter((e) => e.topic === "triage.result").length} triage
+        </div>
+        {problemsOpen && (
+          <div style={{ height: 220, flexShrink: 0, borderTop: "1px solid #222" }}>
+            <ProblemsPanel events={events} openFile={openFileByPath} />
+          </div>
         )}
       </main>
       <RightPanel events={events} state={state} fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild}
@@ -353,7 +367,6 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
         )}
         {/* Other customizations */}
         {[
-          { id: "overview", label: "Overview", items: [`kernel: ${state.brainReady ? "ready" : "..."}`, `device: ${state.real ? "REAL" : "mock"}`] },
           { id: "workflow", label: "Workflow", items: state.workflow?.steps.map((s:any)=>`${s.name}: ${s.op}`) ?? ["(none)"] },
           { id: "agents", label: "Agents", items: ["openocd-task", "brain-agent"] },
           { id: "skills", label: "Skills (ClawhHub)", items: ["characterize", "codegen", "schematic→netlist", "+ Install from ClawhHub"] },
@@ -543,16 +556,16 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
         {buildResult && <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", wordBreak: "break-all" }}>{buildResult.slice(0,200)}</div>}
       </div>
       <div className="rp-section">
-        <div className="rp-h">DevReady Assets (.flux)</div>
+        <div className="rp-h">DevReady Assets</div>
         <div className="kpi-row">
           <div className="kpi-cell"><div className="lbl">Events</div><div className="nb">{assets.length}</div></div>
-          <div className="kpi-cell"><div className="lbl">.flux Files</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
+          <div className="kpi-cell"><div className="lbl">Assets</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
         </div>
         {fluxAssets?.map((a: any, i: number) => (
           <div key={i} className="rp-card">
-            <div className="rp-meta">FLUX · {a.kind}</div>
+            <div className="rp-meta">{(a.type || "asset").toUpperCase()}</div>
             <div className="rp-title" style={{ fontSize: 11 }}>{a.id}</div>
-            <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{a.records} records</div>
+            <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{(a.components ?? []).slice(0, 4).join(" · ")}</div>
           </div>
         ))}
       </div>

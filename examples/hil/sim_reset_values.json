@@ -1,0 +1,19 @@
+{
+  "schema": "flux.hil.plan/v1",
+  "name": "sim-reset-values",
+  "goal": "Verify the asset-generated Renode platform boots with the documented reset state (no firmware needed)",
+  "target": { "backend": "sim", "board": "renode-flux-sim", "chip": "STM32F103xx" },
+  "source_assets": ["regmap-stm32f103xx-1d92b65a", "simplat-stm32f103xx"],
+  "steps": [
+    { "id": "rcc_cr", "type": "probe", "deps": [],
+      "params": { "op": "read_mem", "addr": "0x40021000" } },
+    { "id": "check_rcc", "type": "assert", "deps": ["rcc_cr"],
+      "params": { "expr": { "lhs": "$rcc_cr.value", "op": "eq", "rhs": 131 },
+                  "message": "RCC_CR reset value 0x83 (HSI on+ready) per register-map asset" } },
+    { "id": "usart_sr", "type": "probe", "deps": [],
+      "params": { "op": "read_mem", "addr": "0x40013800" } },
+    { "id": "check_usart", "type": "assert", "deps": ["usart_sr"],
+      "params": { "expr": { "lhs": "$usart_sr.value", "op": "eq", "rhs": 192 },
+                  "message": "USART1_SR reset value 0xC0 (TXE|TC) per register-map asset" } }
+  ]
+}

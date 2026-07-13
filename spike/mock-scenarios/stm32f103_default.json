@@ -1,0 +1,19 @@
+{
+  "description": "STM32F103 (bluepill-like) healthy board: IDCODE readable, USART1 at reset defaults, PC13 LED toggles after firmware flash.",
+  "regs": {
+    "pc": "0x08000130",
+    "sp": "0x20005000"
+  },
+  "mem": {
+    "0xE0042000": "0x20036410",
+    "0x40013800": "0x000000c0",
+    "0x40013808": "0x00000000",
+    "0x4001100C": "0x00000000"
+  },
+  "sequences": {
+    "0x4001100C": ["0x00002000", "0x00000000", "0x00002000", "0x00000000"]
+  },
+  "flash_effects": {
+    "mem": { "0x40013808": "0x00000341" }
+  }
+}

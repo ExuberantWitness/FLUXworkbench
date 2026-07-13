@@ -1,0 +1,15 @@
+# Zephyr on Renode stm32f103 (bluepill) — boot with RCC behavioral stub.
+# Usage (from the repo root, paths are CWD-relative):
+#   renode --disable-gui --port <port> \
+#     -e "$ELF=@build/zephyr/zephyr.elf; $UARTLOG=@/tmp/uart.log; include @sim/renode/zephyr_stm32f103.resc"
+mach create "zephyr-f103"
+machine LoadPlatformDescription @platforms/cpus/stm32f103.repl
+machine LoadPlatformDescription @sim/renode/rcc_stm32f1.repl
+
+sysbus LoadELF $ELF
+sysbus.usart1 CreateFileBackend $UARTLOG true
+
+# Cortex-M fetches SP/PC from the vector table on FIRST start when VTOR is set.
+sysbus.cpu VectorTableOffset 0x08000000
+start
+echo "zephyr-f103 running"

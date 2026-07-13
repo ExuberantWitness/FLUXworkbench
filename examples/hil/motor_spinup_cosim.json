@@ -1,0 +1,19 @@
+{
+  "schema": "flux.hil.plan/v1",
+  "name": "motor-spinup-cosim",
+  "goal": "Firmware PID (real ELF in Renode) drives the Newton motor model to 12 rad/s — multi-domain assert on both the electronic and physical side",
+  "target": { "backend": "sim", "board": "renode-newton-cosim", "chip": "STM32F103xx" },
+  "source_assets": ["regmap-stm32f103xx-1d92b65a", "simplat-stm32f103xx"],
+  "steps": [
+    { "id": "duty", "type": "probe", "deps": [],
+      "params": { "op": "read_mem", "addr": "0x40012C34" } },
+    { "id": "duty_active", "type": "assert", "deps": ["duty"],
+      "params": { "expr": { "lhs": "$duty.value", "op": "in_range", "rhs": [600, 1000] },
+                  "message": "PID duty output settled in the plausible band (electronic domain)" } },
+    { "id": "speed", "type": "sim_probe", "deps": [],
+      "params": { "quantity": "motor.velocity.settled_mean" } },
+    { "id": "speed_in_band", "type": "assert", "deps": ["speed"],
+      "params": { "expr": { "lhs": "$speed.value", "op": "in_range", "rhs": [11.4, 12.6] },
+                  "message": "motor velocity settles at 12 rad/s ±5% (physical domain, Newton)" } }
+  ]
+}

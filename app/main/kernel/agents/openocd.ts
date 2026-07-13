@@ -16,6 +16,7 @@ const CMDS_MOCK: Record<string, (args: unknown[]) => string> = {
   "cmd.flash": (a) => `flash write_image erase ${String(a[0] ?? "")}`,
   "cmd.halt": () => "halt",
   "cmd.mdw": (a) => `mdw ${String(a[0] ?? 0)} ${Number(a[1] ?? 1)}`,
+  "cmd.reg": (a) => `reg ${String(a[0] ?? "pc")}`,
   "cmd.reset": () => "reset",
 };
 
@@ -23,6 +24,7 @@ const CMDS_REAL: Record<string, (args: unknown[]) => string> = {
   "cmd.flash": (a) => `flash write_image erase ${String(a[0] ?? "demo.elf")}`,
   "cmd.halt": () => "halt",
   "cmd.mdw": (a) => `mdw ${String(a[0] ?? 0)} ${Number(a[1] ?? 1)}`,
+  "cmd.reg": (a) => `reg ${String(a[0] ?? "pc")}`,
   "cmd.reset": () => "reset run",
 };
 
