@@ -25,7 +25,7 @@ function langOf(name: string): { kw: string[]; lineComment: string; hashPre: boo
   if (["c", "h", "cpp", "hpp", "cc", "ino", "ld", "dts", "overlay"].includes(ext))
     return { kw: KEYWORDS["c"]!, lineComment: "//", hashPre: true };
   if (["py"].includes(ext)) return { kw: KEYWORDS["py"]!, lineComment: "#", hashPre: false };
-  if (["js", "ts", "jsx", "tsx", "json"].includes(ext)) return { kw: KEYWORDS["js"]!, lineComment: "//", hashPre: false };
+  if (["js", "ts", "jsx", "tsx", "json", "flux"].includes(ext)) return { kw: KEYWORDS["js"]!, lineComment: "//", hashPre: false };
   if (["sh", "bash", "cmake", "yml", "yaml", "toml", "cfg", "conf", "txt", "mk"].includes(ext) || name === "Makefile" || name === "CMakeLists.txt")
     return { kw: KEYWORDS["sh"]!, lineComment: "#", hashPre: false };
   return { kw: [], lineComment: "//", hashPre: false };

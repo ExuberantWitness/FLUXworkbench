@@ -103,6 +103,9 @@ export function App() {
   // WorkSpace isolation: opening a project points the asset store at
   // <project>/.flux; the default sample stays on the global store.
   const [wsLabel, setWsLabel] = useState("global");
+  // OS detection: shown in the footer; Linux-only features gate on caps.
+  const [osInfo, setOsInfo] = useState<{ platform: string; distro: string; arch: string; session: string } | null>(null);
+  useEffect(() => { void window.flux?.osInfo?.().then(setOsInfo).catch(() => void 0); }, []);
   useEffect(() => {
     const target = projectPath === DEFAULT_PROJECT ? "" : projectPath;
     void window.flux?.mcpCall?.("set_workspace", { path: target })
@@ -386,8 +389,10 @@ export function App() {
       </main>
       <RightPanel events={events} state={state} fluxAssets={fluxAssets}
         rawEvents={events} wsLabel={wsLabel} mcpServers={mcpServers} onOpenAsset={setDetailAsset} />
-      <Footer state={state} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
-      {detailAsset && <AssetDetail asset={detailAsset} projectPath={projectPath} onClose={() => setDetailAsset(null)} />}
+      <Footer state={state} osInfo={osInfo} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
+      {detailAsset && <AssetDetail asset={detailAsset} projectPath={projectPath} onClose={() => setDetailAsset(null)}
+        onDeleted={() => { void window.flux?.mcpCall?.("query_asset", {}).then((tx: string) => { const a = JSON.parse(tx); if (Array.isArray(a)) setFluxAssets(a); }); }}
+        revealInExplorer={(p: string) => { const dir = p.substring(0, p.lastIndexOf("/")); const home = "/home/exuber"; setProjectPath(home + dir); setLeftTab("explorer"); }} />}
       <PetAssistant events={events} centerTab={centerTab} assetsSub={assetsSub} />
       {ctxMenu && <ContextMenu ctxMenu={ctxMenu} closeCtx={closeCtx} refreshTree={refreshTree}
         doDelete={doDelete} copyPath={copyPath} copyRelPath={copyRelPath} addToChat={addToChat}
@@ -806,7 +811,16 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
           <div className="kpi-cell"><div className="lbl">{t("rp.assetCount")}</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--grey-3)", margin: "2px 0 4px" }}>{t("rp.assetHint")}</div>
-        {fluxAssets?.map((a: any, i: number) => (
+        {(() => {
+          const RECORD_TYPES = new Set(["mission", "hil-report", "triage-case", "evidence-bundle", "dream-report", "bench-result", "feedback", "board-health"]);
+          const records = (fluxAssets ?? []).filter((a: any) => RECORD_TYPES.has(a.type));
+          return records.length > 0 ? (
+            <div style={{ fontSize: 9.5, color: "var(--grey-3)", marginBottom: 4 }}>
+              🗂 {records.length} {t("rp.recordsHint")}
+            </div>
+          ) : null;
+        })()}
+        {fluxAssets?.filter((a: any) => !["mission", "hil-report", "triage-case", "evidence-bundle", "dream-report", "bench-result", "feedback", "board-health"].includes(a.type)).map((a: any, i: number) => (
           <div key={i} data-guide={i === 0 ? "asset-card" : undefined} className="rp-card" style={{ cursor: "pointer" }} onClick={() => onOpenAsset?.(a)}>
             <div className="rp-meta">{(a.type || "asset").toUpperCase()}</div>
             <div className="rp-title" style={{ fontSize: 11 }}>{a.id}</div>
@@ -835,6 +849,11 @@ function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-expli
       <div className="stage" title={t("rp.engineTip")}>{t("rp.engine")} <b>{state.brainReady?"ready":"..."}</b></div><span className="arr">→</span>
       <div className="stage">assets <b>{state.assets}</b></div>
       <div className="spacer" />
+      {props.osInfo && (
+        <div className="stage" title={`kernel ${props.osInfo.kernel ?? ""} · ${props.osInfo.session ?? ""}`}>
+          🖥 <b>{props.osInfo.distro || props.osInfo.platform}</b> {props.osInfo.arch}
+        </div>
+      )}
     </footer>
   );
 }

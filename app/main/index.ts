@@ -25,17 +25,37 @@ import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runne
 import { generateKeyPair, signManifest, verifyManifest, parseManifest } from "./kernel/capability";
 import type { Event } from "./kernel/types";
 
-// ── path resolution ──
-function repoRoot(): string {
+// ── path resolution — dev vs packaged ──
+// Dev: everything lives in the repo (brain/, skills/, examples/, spike/, sim/).
+// Packaged: electron-builder copies those into process.resourcesPath, and a
+// relocatable CPython is shipped at resources/python (see scripts/fetch-python.mjs).
+const PACKAGED = app.isPackaged;
+
+/** Root that holds brain/skills/examples/spike/sim — repo in dev, resources when packaged. */
+function assetRoot(): string {
+  if (PACKAGED) return process.resourcesPath;
   const fromHere = path.resolve(__dirname, "..", "..", "..");
   return existsSync(path.join(fromHere, "brain"))
     ? fromHere
     : path.resolve(process.cwd(), "..");
 }
-const BRAIN_PY = process.env["FLUX_BRAIN_PY"] ?? path.join(repoRoot(), "brain", ".venv", "bin", "python");
+function repoRoot(): string { return assetRoot(); }
+
+/** The embedded python interpreter (packaged) or the repo venv (dev). */
+function embeddedPython(): string {
+  if (process.env["FLUX_BRAIN_PY"]) return process.env["FLUX_BRAIN_PY"]!;
+  if (PACKAGED) {
+    return process.platform === "win32"
+      ? path.join(process.resourcesPath, "python", "python.exe")
+      : path.join(process.resourcesPath, "python", "bin", "python3");
+  }
+  return path.join(repoRoot(), "brain", ".venv", "bin", "python");
+}
+const BRAIN_PY = embeddedPython();
 const BRAIN_PATH = process.env["FLUX_BRAIN_PATH"] ?? path.join(repoRoot(), "brain");
 const BRAIN_MODULE = process.env["FLUX_BRAIN_MODULE"] ?? "flux_brain.bus_ipc";
-const OPENOCD_CMD = process.env["FLUX_OPENOCD_CMD"] ?? "python3";
+// mock OpenOCD runs under the embedded python too (no system python3 assumed).
+const OPENOCD_CMD = process.env["FLUX_OPENOCD_CMD"] ?? BRAIN_PY;
 const OPENOCD_ARGS = process.env["FLUX_OPENOCD_ARGS"]
   ? process.env["FLUX_OPENOCD_ARGS"].split(" ")
   : [path.join(repoRoot(), "spike", "mock-openocd-cli.py")];
@@ -87,7 +107,24 @@ async function mirrorEventsToRenderer(): Promise<void> {
   }
 }
 
+/** One-click principle: the interpreter ships INSIDE the app. This only warns
+ * if the embedded runtime is somehow missing (corrupt install) — brain servers
+ * would then fail to spawn, so we surface a clear reason instead of a silent hang. */
+function checkEmbeddedRuntime(): void {
+  if (!existsSync(BRAIN_PY)) {
+    const msg = PACKAGED
+      ? `Embedded Python missing at ${BRAIN_PY} — the install may be corrupt. Reinstall FluxWorkbench.`
+      : `Dev venv missing at ${BRAIN_PY} — run: cd brain && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`;
+    console.error(`[kernel] ${msg}`);
+    void bus.publish({ source: "kernel", kind: "error", topic: "install.progress",
+      data: { line: `[ERR] ${msg}` }, trace_id: "runtime-check" });
+  } else {
+    console.log(`[kernel] runtime: ${BRAIN_PY}`);
+  }
+}
+
 async function bootKernel(): Promise<void> {
+  checkEmbeddedRuntime();
   await mirrorEventsToRenderer();
   // Durable JSONL capture: mirror list + orchestrator internals (cmd.* flow
   // through openocd.event; mcp.tool.result feeds trajectories + evidence).
@@ -111,7 +148,7 @@ async function bootKernel(): Promise<void> {
   const mcp = new MCPOrchestrator(bus);
 
   // Start Flux-Insight MCP server (conductor + LLM)
-  const brainPy = process.env["FLUX_BRAIN_PY"] ?? path.join(repoRoot(), "brain", ".venv", "bin", "python");
+  const brainPy = BRAIN_PY;
   const insightScript = path.join(repoRoot(), "brain", "flux_insight_mcp.py");
   await mcp.startServer({
     name: "flux-insight",
@@ -119,6 +156,7 @@ async function bootKernel(): Promise<void> {
     args: ["-u", insightScript],
     env: {
       PYTHONUNBUFFERED: "1",
+      PYTHONPATH: BRAIN_PATH,
       NO_PROXY: "127.0.0.1,localhost",
       no_proxy: "127.0.0.1,localhost",
       https_proxy: "",
@@ -135,6 +173,7 @@ async function bootKernel(): Promise<void> {
     args: ["-u", physicalScript],
     env: {
       PYTHONUNBUFFERED: "1",
+      PYTHONPATH: BRAIN_PATH,
       FLUX_OPENOCD_REAL: process.env["FLUX_OPENOCD_REAL"] ?? "0",
       FLUX_OPENOCD_BIN: process.env["FLUX_OPENOCD_BIN"] ?? "/tmp/hpm-openocd/src/openocd",
       HPM_SDK_BASE: process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk",
@@ -287,7 +326,7 @@ async function bootKernel(): Promise<void> {
         trace_id: `${tool}-${Date.now()}`,
       });
     }
-    if (tool === "commit_asset" || tool.startsWith("ingest_")) {
+    if (tool === "commit_asset" || tool.startsWith("ingest_") || tool === "compose_devready" || tool === "import_asset" || tool === "add_board_lesson") {
       try {
         const parsed = JSON.parse(text) as { asset_id?: string; type?: string; components?: string[] };
         if (parsed.asset_id) {
@@ -298,6 +337,14 @@ async function bootKernel(): Promise<void> {
           });
         }
       } catch { /* non-JSON tool output — no asset to relay */ }
+    }
+    if (tool === "delete_asset") {
+      // a removal still lands on asset.committed so panels refresh their lists
+      await bus.publish({
+        source: "flux-insight", kind: "execute", topic: "asset.committed",
+        data: { asset_id: args?.["asset_id"], type: "deleted", tool },
+        trace_id: `asset-${Date.now()}`,
+      });
     }
     return text;
   });
@@ -394,6 +441,39 @@ async function bootKernel(): Promise<void> {
   // (The old auto-fired alarm demo is gone: alarm.critical now really preempts
   // the tool queue, so it must only fire on operator action — flux:alarmDemo.)
 
+  // ── OS detection: the studio's Linux-specific paths (lsusb, pkexec/udev,
+  // bash, conda layouts) must KNOW where they run instead of failing weirdly.
+  // Detected once, cached; renderer gates buttons + shows it in the footer.
+  let osInfoCache: Record<string, unknown> | null = null;
+  ipcMain.handle("flux:osInfo", async () => {
+    if (osInfoCache) return osInfoCache;
+    const has = (cmd: string): Promise<boolean> =>
+      new Promise((r) => exec(`command -v ${cmd}`, (err) => r(!err)));
+    let distro = "";
+    try {
+      const rel = readFileSync("/etc/os-release", "utf8");
+      distro = /PRETTY_NAME="?([^"\n]+)"?/.exec(rel)?.[1] ?? "";
+    } catch { /* not a freedesktop Linux */ }
+    const [pkexec, lsusb, udevadm] = process.platform === "linux"
+      ? await Promise.all([has("pkexec"), has("lsusb"), has("udevadm")])
+      : [false, false, false];
+    osInfoCache = {
+      platform: process.platform,           // linux | darwin | win32
+      arch: process.arch,
+      distro,                                // e.g. "Ubuntu 22.04.5 LTS"
+      kernel: os.release(),
+      desktop: process.env["XDG_CURRENT_DESKTOP"] ?? "",
+      session: process.env["XDG_SESSION_TYPE"] ?? "",
+      caps: {
+        usbScan: lsusb,                      // device detection
+        usbAuthorize: pkexec && udevadm && existsSync("/etc/udev/rules.d"),
+        terminal: process.platform !== "win32",
+      },
+    };
+    console.log(`[kernel] os: ${process.platform}/${process.arch} ${distro} · caps=${JSON.stringify(osInfoCache["caps"])}`);
+    return osInfoCache;
+  });
+
   // ── Bottom terminal (VSCode-style drawer): one-shot commands, output
   // streamed as term.output events. Not a pty — a command runner.
   ipcMain.handle("flux:termRun", async (_evt, cmd: string, cwd?: string, envBin?: string) => {
@@ -407,7 +487,9 @@ async function bootKernel(): Promise<void> {
     // Workspace conda env: prepend its bin so python/pip resolve inside it.
     const envPath = envBin && existsSync(envBin)
       ? `${envBin}:${process.env["PATH"] ?? ""}` : process.env["PATH"];
-    const proc = spawnCmd("bash", ["-lc", cmd], { cwd: dir, env: { ...process.env, PATH: envPath ?? "" } });
+    const proc = process.platform === "win32"
+      ? spawnCmd("powershell.exe", ["-NoProfile", "-Command", cmd], { cwd: dir, env: { ...process.env, PATH: envPath ?? "" } })
+      : spawnCmd("bash", ["-lc", cmd], { cwd: dir, env: { ...process.env, PATH: envPath ?? "" } });
     let emitted = 0;
     const MAX_LINES = 400;
     const pump = (kind: string) => {
@@ -588,7 +670,7 @@ ipcMain.handle("flux:condaList", async () => {
 ipcMain.handle("flux:listAssets", async () => {
   const { exec } = require("child_process");
   return new Promise((resolve) => {
-    const py = process.env["FLUX_BRAIN_PY"] ?? path.join(repoRoot(), "brain", ".venv", "bin", "python");
+    const py = BRAIN_PY;
     exec(`${py} -c "from flux_brain import asset_store;import json;print(json.dumps(asset_store.list_assets()))"`,
       { env: { ...process.env, PYTHONPATH: process.env["FLUX_BRAIN_PATH"] ?? path.join(repoRoot(), "brain") } },
       (err: Error | null, stdout: string) => { try { resolve(JSON.parse(stdout.trim())); } catch { resolve([]); } });
@@ -642,6 +724,8 @@ ipcMain.handle("flux:isaacCancel", async () => {
 });
 
 ipcMain.handle("flux:build", async (_evt: any, sampleDir: string, opts?: { toolchain?: "hpm" | "zephyr"; board?: string; pristine?: boolean }) => {
+  // devready build_howto paths use ~ — expand before hitting the filesystem
+  if (sampleDir.startsWith("~")) sampleDir = path.join(os.homedir(), sampleDir.slice(1));
   const result = await runBuild(sampleDir, bus, opts ?? {});
   if (!result.ok) {
     void runTriage(result.log ?? result.error ?? "", "build", { sampleDir, board: opts?.board });

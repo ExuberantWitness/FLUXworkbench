@@ -2,6 +2,21 @@
 
 > Robot-dev **Claude Code** — a one-stop hardware-R&D studio that **merges and surpasses vendor AI-agent IDEs** (CC Studio, STM32CubeIDE, …). VSCode-like, hardware-enhanced.
 
+## ⬇️ Install (one click — nothing else to install)
+
+Grab the installer for your OS from **[Releases](https://github.com/ExuberantWitness/FLUXworkbench/releases/latest)** — the app bundles its own Python runtime, so you do **not** install Python, Node, or conda yourself.
+
+| OS | Download | Run |
+|---|---|---|
+| **Windows** | `FluxWorkbench-<ver>-win-x64.exe` | double-click → Next → Finish |
+| **macOS** (Apple Silicon / Intel) | `…-mac-arm64.dmg` / `…-mac-x64.dmg` | open .dmg → drag to Applications → **right-click → Open** first time |
+| **Linux** | `…-linux-x64.AppImage` (self-updating) | `chmod +x` and double-click |
+| **Linux (Debian/Ubuntu)** | `…-linux-x64.deb` | `sudo apt install ./…deb` |
+
+First boot comes straight up in **mock/simulation mode** — run the guided device bring-up and build a DevReady asset with **no hardware needed**. Full step-by-step, macOS unsigned-app note, and how heavy SDKs/toolchains install on demand: **[INSTALL.md](INSTALL.md)**.
+
+> Real-hardware probe connection (USB authorize + detect) is **Linux-first** today; mock, simulation, asset, and cross-compile features work on all three OSes.
+
 > Branch **`v2`** is the active rewrite. `main` preserves the v0 toy (Python flux-runtime + vendored openwork + single-file UI) for history.
 
 ## What it is

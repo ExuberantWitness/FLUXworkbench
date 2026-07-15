@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLang } from "./i18n";
 import { DashboardPanel } from "./DashboardPanel";
 import { GUIDES, guideById, classifierFlows, type Guide, type Advance } from "./guides";
+import { mdLite } from "./mdlite";
 import { PREFLIGHT_RULES, SUGGESTIONS, type PreflightCtx } from "./preflight";
 
 interface FluxEvent { topic: string; data: Record<string, unknown>; trace_id: string }
@@ -28,29 +29,6 @@ export function clearGuide(): void {
   document.querySelectorAll(".guide-highlight").forEach((el) => el.classList.remove("guide-highlight"));
 }
 
-// Minimal markdown → HTML (code blocks, inline code, bold, headers, lists).
-function mdLite(src: string): string {
-  const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const blocks = src.split(/```/);
-  let html = "";
-  for (let i = 0; i < blocks.length; i++) {
-    if (i % 2 === 1) { // code block
-      const body = blocks[i]!.replace(/^\w*\n/, "");
-      html += `<pre class="pet-code">${esc(body)}</pre>`;
-      continue;
-    }
-    let t = esc(blocks[i]!);
-    t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
-    t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
-    t = t.replace(/^### (.*)$/gm, "<b>$1</b>");
-    t = t.replace(/^## (.*)$/gm, "<b>$1</b>");
-    t = t.replace(/^# (.*)$/gm, "<b>$1</b>");
-    t = t.replace(/^[-*] (.*)$/gm, "• $1");
-    t = t.replace(/\n/g, "<br/>");
-    html += t;
-  }
-  return html;
-}
 
 const FACES = { idle: "🤖", happy: "🎉", think: "💭", sad: "🫂" } as const;
 

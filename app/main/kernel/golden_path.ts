@@ -66,23 +66,23 @@ export class GoldenPath {
     private onVerified?: (plan: HilTestPlan, report: HilReport, startedTs: number) => Promise<void>,
   ) {}
 
-  // Duplicate-fire guard: a focused Start button + held Enter key-repeats
-  // clicks faster than a characterization mission completes (~300ms), which
-  // once produced 31 identical mission assets. Same goal+board within the
-  // window = one mission.
-  private lastRunKey = "";
-  private lastRunAt = 0;
+  // Re-entrancy guard only: a mission with the SAME key already IN-FLIGHT is
+  // ignored (blocks a truly concurrent double-fire). NOT a time cooldown —
+  // sequential re-runs are allowed the moment the previous one completes, and
+  // durable assets (devready-/pinmap-/experience-<board>) carry stable ids so
+  // re-running overwrites rather than duplicates. The held-Enter storm is
+  // stopped at the source in MissionPanel (auto-repeat suppression).
+  private inflightKeys = new Set<string>();
 
   async run(goal: string, opts: GoldenPathOpts = {}): Promise<GoldenPathResult> {
     const chip = opts.chip ?? "STM32F103xx";
     const board = opts.board ?? "stm32f103-bluepill";
     const backend = opts.backend ?? "mock";
     const key = `${goal}|${board}|${backend}`;
-    if (key === this.lastRunKey && Date.now() - this.lastRunAt < 3000) {
-      return { missionId: "", error: "duplicate run ignored (cooldown 3s)" };
+    if (this.inflightKeys.has(key)) {
+      return { missionId: "", error: "a mission with the same target is already running" };
     }
-    this.lastRunKey = key;
-    this.lastRunAt = Date.now();
+    this.inflightKeys.add(key);
     const missionId = this.missions.start(goal, chip);
 
     try {
@@ -201,6 +201,8 @@ export class GoldenPath {
       const record = this.missions.finish(missionId, "ERROR", (e as Error).message);
       if (record) await this.commitMissionAsset(record, false).catch(() => void 0);
       return { missionId, error: (e as Error).message };
+    } finally {
+      this.inflightKeys.delete(key);
     }
   }
 

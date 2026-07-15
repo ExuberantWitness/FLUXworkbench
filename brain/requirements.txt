@@ -1,0 +1,5 @@
+# Flux Studio brain — deps baked into the EMBEDDED python at build time
+# (scripts/fetch-python.mjs). Users install nothing: one-click setup.
+httpx>=0.27
+cmsis-svd>=0.4          # ingest_svd (register maps)
+pdfplumber>=0.11        # ingest_datasheet (reference-manual PDFs)

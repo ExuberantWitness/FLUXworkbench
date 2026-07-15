@@ -2,7 +2,7 @@
   "name": "fluxworkbench",
   "version": "0.1.0",
   "author": "Flux Workbench Team",
-  "description": "Flux Workbench v2 — robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
+  "description": "Flux Workbench v2 \u2014 robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "pnpm --filter @fluxworkbench/app dev",
@@ -12,7 +12,11 @@
     "build:native": "cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release && cmake --build native/build -j",
     "dist": "pnpm -r build && npx electron-builder --linux AppImage",
     "dist:deb": "pnpm -r build && npx electron-builder --linux deb",
-    "start": "./start.sh"
+    "start": "./start.sh",
+    "prep:python": "node scripts/fetch-python.mjs",
+    "dist:win": "pnpm -r build && npx electron-builder --win nsis",
+    "dist:mac": "pnpm -r build && npx electron-builder --mac",
+    "dist:all": "pnpm -r build && npx electron-builder -mwl"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -31,16 +35,103 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "brain", "to": "brain", "filter": ["**/*", "!.venv/**", "!**/__pycache__/**"] },
-      { "from": "bus", "to": "bus" }
+      {
+        "from": "dist-python/python",
+        "to": "python"
+      },
+      {
+        "from": "brain",
+        "to": "brain",
+        "filter": [
+          "**/*",
+          "!.venv/**",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "skills",
+        "to": "skills"
+      },
+      {
+        "from": "examples",
+        "to": "examples"
+      },
+      {
+        "from": "spike",
+        "to": "spike"
+      },
+      {
+        "from": "sim",
+        "to": "sim"
+      },
+      {
+        "from": "firmware",
+        "to": "firmware"
+      },
+      {
+        "from": "benchmarks",
+        "to": "benchmarks"
+      }
     ],
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Development",
-      "executableName": "fluxworkbench"
+      "executableName": "fluxworkbench",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "publish": [
-      { "provider": "github", "owner": "ExuberantWitness", "repo": "FLUXworkbench" }
-    ]
+      {
+        "provider": "github",
+        "owner": "ExuberantWitness",
+        "repo": "FLUXworkbench"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "identity": null
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    }
   }
 }

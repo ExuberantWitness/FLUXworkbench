@@ -136,7 +136,7 @@ export async function runBuild(sampleDir: string, bus: Bus, opts: BuildOptions =
   if (opts.toolchain === "zephyr") {
     return runZephyrBuild(sampleDir, opts.board ?? "stm32_min_dev@blue", bus, opts.pristine ?? false);
   }
-  return runHpmBuild(sampleDir, bus);
+  return runHpmBuild(sampleDir, bus, opts.board ?? "hpm6e00evk");
 }
 
 /** Auto-detect the RISC-V toolchain: env override first, then ~/toolchains/*riscv*. */
@@ -152,7 +152,7 @@ function detectRiscvToolchain(): string {
   return "/opt/riscv";
 }
 
-async function runHpmBuild(sampleDir: string, bus: Bus): Promise<BuildResult> {
+async function runHpmBuild(sampleDir: string, bus: Bus, board = "hpm6e00evk"): Promise<BuildResult> {
   const os = require("node:os") as typeof import("node:os");
   const toolchain = detectRiscvToolchain();
   const sdk = process.env["HPM_SDK_BASE"] ?? `${os.homedir()}/hpm_sdk`;
@@ -166,7 +166,7 @@ async function runHpmBuild(sampleDir: string, bus: Bus): Promise<BuildResult> {
   await progress("start");
   return new Promise((resolve) => {
     exec(
-      `mkdir -p ${buildDir} && cd ${buildDir} && cmake -DBOARD=hpm6e00evk -DHPM_SDK_BASE=${sdk} -DHPM_BUILD_TYPE=flash_xip ${sampleDir} && make -j4`,
+      `mkdir -p ${buildDir} && cd ${buildDir} && cmake -DBOARD=${board} -DHPM_SDK_BASE=${sdk} -DHPM_BUILD_TYPE=flash_xip ${sampleDir} && make -j4`,
       // /usr/bin first: hpm_sdk cmake needs a python3 with pyyaml, and a leaked
       // venv PATH often points at one without it (the pyyaml pitfall).
       { env: { ...process.env, GNURISCV_TOOLCHAIN_PATH: toolchain, HPM_SDK_BASE: sdk, PATH: `${toolchain}/bin:/usr/bin:${process.env.PATH}` } },

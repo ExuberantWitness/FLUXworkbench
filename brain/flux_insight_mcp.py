@@ -19,7 +19,7 @@ log = logging.getLogger("flux_insight")
 # flux_brain is editable-installed in brain/.venv; fall back to sibling path
 # so the server also works when launched with a bare python3.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flux_brain import asset_store, codegen, devready, dts_ingest, fluxweave_core, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
+from flux_brain import asset_store, board_skillgen, codegen, devready, dts_ingest, fluxweave_core, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
 from flux_brain.llm_ollama import SCHEMATIC_PROMPT  # noqa: E402
 from flux_brain.llm_vllm import _data_url  # noqa: E402
 
@@ -280,9 +280,20 @@ TOOLS = [
          "use_assets": {"type": "boolean", "description": "false = bench 'bare' condition: no asset context, model memory only (default true)"},
          "pin_model": {"type": "boolean", "description": "true = skip tier routing, use the current text config exactly (bench)"}},
       "required": ["goal"]}},
-    {"name": "compose_devready", "description": "Assemble the full DevReady asset (BODY/MIND/JOURNAL per FLUXmeme spec) for a board: pin map, memory map, boot modes, RTOS availability, build/flash howto, agent skills, linked lifetime records.",
+    {"name": "compose_devready", "description": "Assemble the full DevReady asset (BODY/MIND/JOURNAL per FLUXmeme spec) for a board: pin map, memory map, boot modes, RTOS availability, build/flash howto, agent skills, linked lifetime records. Stable id per board (recompose overwrites) + content fingerprint; lands a .flux file.",
      "inputSchema": {"type": "object", "properties": {
-         "board": {"type": "string", "description": "board id from skills/boards.json, e.g. hpm6e00evk"}},
+         "board": {"type": "string", "description": "board id from skills/boards.json, e.g. hpm6e00evk"},
+         "serial": {"type": "string", "description": "optional chip UID from a real probe, pins a physical instance"},
+         "refresh_wiki": {"type": "boolean", "description": "refetch official docs into the pack (default: reuse embedded copies)"}},
+      "required": ["board"]}},
+    {"name": "add_board_lesson", "description": "Record a debugging lesson (symptom + fix) into the board's experience memory and re-embed it in the .flux DevReady asset immediately.",
+     "inputSchema": {"type": "object", "properties": {
+         "board": {"type": "string"}, "symptom": {"type": "string"}, "fix": {"type": "string"}},
+      "required": ["board", "symptom"]}},
+    {"name": "gen_board_skill", "description": "Generate an agent-skill pack (guide/setup/interview/build/troubleshoot SKILL.md) from a board's .flux DevReady asset. The troubleshoot skill learns from the board's accumulated fault history. Installable by Claude Code / Cursor / Codex.",
+     "inputSchema": {"type": "object", "properties": {
+         "board": {"type": "string", "description": "board id (must have a devready asset — run compose_devready first)"},
+         "out_dir": {"type": "string", "description": "optional output dir (default ~/.flux/skills/<board>)"}},
       "required": ["board"]}},
     {"name": "usage_stats", "description": "LLM token usage + routing-savings estimate (dashboard metering line). Aggregates the llm_usage table.",
      "inputSchema": {"type": "object", "properties": {
@@ -300,6 +311,8 @@ TOOLS = [
          "asset_id": {"type": "string"}, "query": {"type": "string"},
          "limit": {"type": "integer"}},
       "required": ["out_path"]}},
+    {"name": "delete_asset", "description": "Delete one devready asset by id from the current store (and its FTS index). Returns {deleted}.",
+     "inputSchema": {"type": "object", "properties": {"asset_id": {"type": "string"}}, "required": ["asset_id"]}},
     {"name": "import_asset", "description": "Import a flux.assets/v1 bundle (or single envelope JSON) into the current store. overwrite=false skips existing asset_ids.",
      "inputSchema": {"type": "object", "properties": {
          "path": {"type": "string"}, "overwrite": {"type": "boolean"}},
@@ -661,9 +674,19 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
     elif name == "compose_devready":
         boards_json = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json")
-        out = devready.compose_devready(args["board"], os.path.normpath(boards_json))
+        out = devready.compose_devready(args["board"], os.path.normpath(boards_json), serial=args.get("serial"),
+                                        refresh_wiki=bool(args.get("refresh_wiki", False)))
         if "error" not in out:
             log.info(f"devready composed: {out['asset_id']} pins={out['body_pins']} rtos={out['rtos_available']}")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "add_board_lesson":
+        boards_json = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json"))
+        out = devready.add_board_lesson(args["board"], args.get("symptom", ""), args.get("fix", ""), boards_json)
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "gen_board_skill":
+        out = board_skillgen.generate_board_skills(args["board"], args.get("out_dir"))
+        if "error" not in out:
+            log.info(f"board skills: {out['board']} -> {len(out['skills'])} skills in {out['skill_dir']}")
         return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
     elif name == "usage_stats":
         stats = asset_store.usage_stats(
@@ -690,6 +713,9 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             query=args.get("query"), limit=int(args.get("limit", 500)))
         log.info(f"exported {out['count']} assets -> {out['path']}")
         return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "delete_asset":
+        deleted = asset_store.delete_asset(args["asset_id"])
+        return {"content": [{"type": "text", "text": json.dumps({"deleted": deleted, "asset_id": args["asset_id"]})}]}
     elif name == "import_asset":
         out = asset_store.import_assets(args["path"], overwrite=bool(args.get("overwrite", True)))
         log.info(f"imported {out['imported']} assets (skipped {out['skipped']})")

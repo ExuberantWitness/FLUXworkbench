@@ -1,0 +1,51 @@
+name: Release
+
+# One-click installers for all three OSes. Push a tag like v0.2.0 → three
+# runners build in parallel → artifacts published to a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            eb: "--linux"
+          - os: windows-latest
+            eb: "--win"
+          - os: macos-latest
+            eb: "--mac"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Bake a relocatable CPython (with brain deps) into dist-python/ for THIS
+      # runner's OS. Users install nothing.
+      - name: Embed Python runtime
+        run: node scripts/fetch-python.mjs
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer + main
+        run: pnpm -r build
+
+      # electron-builder publishes to the tag's GitHub Release.
+      - name: Package + publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS stays unsigned (no Apple Developer account); skip notarization.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.eb }} --publish always
+        shell: bash

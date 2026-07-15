@@ -162,6 +162,10 @@ const api = {
   condaCreate(name: string): Promise<void> {
     return ipcRenderer.invoke("flux:condaCreate", name);
   },
+  // ── OS detection (gates Linux-only features honestly) ──
+  osInfo(): Promise<{ platform: string; arch: string; distro: string; kernel: string; desktop: string; session: string; caps: { usbScan: boolean; usbAuthorize: boolean; terminal: boolean } }> {
+    return ipcRenderer.invoke("flux:osInfo");
+  },
   // ── bottom terminal ──
   termRun(cmd: string, cwd?: string, envBin?: string): Promise<boolean> {
     return ipcRenderer.invoke("flux:termRun", cmd, cwd, envBin);

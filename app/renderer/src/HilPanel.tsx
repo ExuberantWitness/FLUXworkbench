@@ -52,6 +52,10 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
   };
   useEffect(() => { void scanDevices(); }, []);
   const [authNote, setAuthNote] = useState("");
+  const [osCaps, setOsCaps] = useState<{ usbScan: boolean; usbAuthorize: boolean } | null>(null);
+  useEffect(() => {
+    void (window as any).flux?.osInfo?.().then((o: any) => setOsCaps(o.caps)).catch(() => void 0); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }, []);
   const authorize = async (d: { id: string; vid: string; pid: string }): Promise<void> => {
     setDevBusy(`auth-${d.vid}`); setAuthNote("");
     try {
@@ -155,7 +159,10 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
       <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 600, color: "var(--grey-3)" }}>
           {t("dev.title")}
-          <button data-guide="dev-scan" className="ft-btn" style={{ marginLeft: "auto" }} disabled={devBusy === "scan"} onClick={() => void scanDevices()}>
+          <button data-guide="dev-scan" className="ft-btn" style={{ marginLeft: "auto" }}
+            disabled={devBusy === "scan" || osCaps?.usbScan === false}
+            title={osCaps?.usbScan === false ? t("dev.noOsScan") : undefined}
+            onClick={() => void scanDevices()}>
             {devBusy === "scan" ? "…" : t("dev.scan")}
           </button>
         </div>
@@ -168,7 +175,9 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               {d.present && (
                 <>
-                  <button data-guide="dev-authorize" className="ft-btn" disabled={devBusy === `auth-${d.vid}`} title={t("dev.authTip")}
+                  <button data-guide="dev-authorize" className="ft-btn"
+                    disabled={devBusy === `auth-${d.vid}` || osCaps?.usbAuthorize === false}
+                    title={osCaps?.usbAuthorize === false ? t("dev.noOsAuth") : t("dev.authTip")}
                     onClick={() => void authorize(d)}>{devBusy === `auth-${d.vid}` ? "🔑…" : t("dev.auth")}</button>
                   <button data-guide="dev-connect" className="chat-send" style={{ padding: "1px 8px", fontSize: 10 }} disabled={devBusy === `conn-${d.id}`}
                     onClick={() => void connect(d.id)}>

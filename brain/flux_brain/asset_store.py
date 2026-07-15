@@ -209,6 +209,17 @@ def export_assets(out_path: str, asset_id: str | None = None,
     return {"path": str(p), "count": len(envelopes)}
 
 
+def delete_asset(asset_id: str) -> bool:
+    """Remove one asset from the store + FTS index. Returns True if it existed."""
+    conn = _ensure_db()
+    cur = conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+    conn.execute("DELETE FROM assets_fts WHERE id = ?", (asset_id,))
+    conn.commit()
+    existed = cur.rowcount > 0
+    conn.close()
+    return existed
+
+
 def import_assets(in_path: str, overwrite: bool = True) -> dict[str, Any]:
     """Load a bundle (or a single bare envelope) back into the store.
     Returns {imported, skipped, ids}."""

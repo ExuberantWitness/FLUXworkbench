@@ -114,3 +114,7 @@ firmware/**/*.elf
 vendor/integrations/
 vendor/zephyrproject/
 brain/vendor/datasheets/
+
+# packaging: embedded python + build output (fetched/produced by CI)
+dist-python/
+release/

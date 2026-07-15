@@ -73,7 +73,12 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
     return m;
   }, [events, missionId]);
 
+  // Synchronous re-entrancy guard: `running` is async state, so a held-Enter
+  // auto-repeat can fire start() again before it flips. A ref blocks that.
+  const startingRef = React.useRef(false);
   const start = async (): Promise<void> => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setRunning(true); setResult(null);
     // The kernel assigns the real id; clear filter until the result returns.
     setMissionId("");
@@ -95,6 +100,7 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
       setResult({ missionId: "", error: (e as Error).message });
     } finally {
       setRunning(false);
+      startingRef.current = false;
     }
   };
 
@@ -109,7 +115,9 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
       <div style={{ display: "flex", gap: 6 }}>
         <input data-guide="mission-goal" className="flux-input" style={{ flex: 1 }} value={goal}
           onChange={(e) => setGoal(e.target.value)} placeholder={t("mission.goalPh")} />
-        <button className="chat-send" data-guide="mission-start" disabled={running || !goal.trim()} onClick={() => void start()}>
+        <button className="chat-send" data-guide="mission-start" disabled={running || !goal.trim()}
+          onKeyDown={(e) => { if (e.key === "Enter" && e.repeat) { e.preventDefault(); e.stopPropagation(); } }}
+          onClick={() => void start()}>
           {running ? t("mission.running") : t("mission.start")}
         </button>
       </div>
