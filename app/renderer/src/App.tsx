@@ -2,8 +2,14 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { HilPanel } from "./HilPanel";
 import { ProblemsPanel } from "./ProblemsPanel";
-import { FluxWeavePanel } from "./FluxWeavePanel";
 import { UnitPortPanel } from "./UnitPortPanel";
+import { AssetsPanel } from "./AssetsPanel";
+import { DashboardPanel } from "./DashboardPanel";
+import { TerminalPanel } from "./TerminalPanel";
+import { CodeView } from "./CodeView";
+import { PipelineViz } from "./PipelineViz";
+import { PetAssistant } from "./PetAssistant";
+import { AssetDetail } from "./AssetDetail";
 import { useLang } from "./i18n";
 
 interface FluxEvent { source: string; kind: string; topic: string; data: Record<string, unknown>; trace_id: string }
@@ -46,9 +52,16 @@ export function App() {
   const [fluxAssets, setFluxAssets] = useState<{id:string;ts:number;type:string;components:string[]}[]>([]);
   const [building, setBuilding] = useState(false);
   const [buildResult, setBuildResult] = useState("");
-  // ── center tabs ──
-  const [centerTab, setCenterTab] = useState<"chat" | "fluxweave" | "unitport" | "wiki" | "hil">("chat");
+  // ── center tabs: 对话 / 资产 / 仿真 / 真实 ──
+  const [centerTab, setCenterTab] = useState<"chat" | "assets" | "sim" | "real" | "wiki">("assets");
   const [problemsOpen, setProblemsOpen] = useState(false);
+  const [bottomTab, setBottomTab] = useState<"problems" | "terminal">("problems");
+  // assets sub-tab lifted here so the guide engine can observe it (advance signal)
+  const [assetsSub, setAssetsSub] = useState<"bringup" | "assembly">("bringup");
+  // ── chat sessions (issue: + New Session did nothing) ──
+  const [sessions, setSessions] = useState<Array<{ id: string; name: string; msgs: ChatMsg[] }>>(
+    [{ id: "current", name: "Session 1", msgs: [] }]);
+  const [activeSession, setActiveSession] = useState("current");
   const [wikiContent, setWikiContent] = useState("");
   // ── context menu state ──
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: TreeNode | null; isRoot: boolean } | null>(null);
@@ -79,7 +92,90 @@ export function App() {
 
   useEffect(() => { void loadDir(projectPath).then(setTreeRoot); }, [projectPath, loadDir]);
   useEffect(() => { void window.flux?.condaList?.().then((e: CondaEnv[]) => { setCondaEnvs(e); }).catch(() => void 0); }, []);
-  useEffect(() => { void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0); }, [events.filter(e=>e.topic==="asset.committed").length]);
+  // Asset panel reads through query_asset so it follows the active workspace
+  // (the old flux:listAssets exec path always hit the global store).
+  useEffect(() => {
+    void window.flux?.mcpCall?.("query_asset", {})
+      .then((text: string) => { const a = JSON.parse(text); if (Array.isArray(a)) setFluxAssets(a); })
+      .catch(() => { void window.flux?.listFluxAssets?.().then((a: typeof fluxAssets) => setFluxAssets(a)).catch(() => void 0); });
+  }, [events.filter(e=>e.topic==="asset.committed").length]);
+
+  // WorkSpace isolation: opening a project points the asset store at
+  // <project>/.flux; the default sample stays on the global store.
+  const [wsLabel, setWsLabel] = useState("global");
+  useEffect(() => {
+    const target = projectPath === DEFAULT_PROJECT ? "" : projectPath;
+    void window.flux?.mcpCall?.("set_workspace", { path: target })
+      .then((text: string) => {
+        try { setWsLabel(JSON.parse(text).workspace === "global" ? "global" : (projectPath.split("/").pop() ?? "ws")); }
+        catch { setWsLabel("global"); }
+      })
+      .catch(() => void 0);
+  }, [projectPath]);
+
+  // ── Workspaces (left rail, first-class): add / rename / delete ──
+  const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string; path: string }>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("flux.workspaces") ?? "") as Array<{ id: string; name: string; path: string }>;
+      if (Array.isArray(saved) && saved.length) return saved;
+    } catch { /* first run */ }
+    return [{ id: "global", name: "Global", path: DEFAULT_PROJECT }];
+  });
+  const [activeWs, setActiveWs] = useState("global");
+  const [renamingWs, setRenamingWs] = useState<string | null>(null);
+  useEffect(() => { localStorage.setItem("flux.workspaces", JSON.stringify(workspaces)); }, [workspaces]);
+  const addWorkspace = async (): Promise<void> => {
+    const p = await window.flux?.openFolder?.();
+    if (!p) return;
+    const id = `ws-${Date.now()}`;
+    setWorkspaces((w) => [...w, { id, name: p.split("/").pop() ?? p, path: p }]);
+    setActiveWs(id); setProjectPath(p);
+  };
+  const selectWorkspace = (id: string): void => {
+    const ws = workspaces.find((x) => x.id === id) as { id: string; name: string; path: string; conda?: string } | undefined;
+    if (!ws) return;
+    setActiveWs(id); setProjectPath(ws.path);
+    if (ws.conda) setCondaActive(ws.conda);
+  };
+  // Conda env is chosen per-workspace from the left rail; the selection is
+  // real: the bottom terminal runs commands with that env's bin on PATH.
+  const condaBin = useMemo(() => {
+    const env = condaEnvs.find((e) => e.name === condaActive);
+    return env?.path ? `${env.path}/bin` : undefined;
+  }, [condaEnvs, condaActive]);
+  const chooseConda = (name: string): void => {
+    setCondaActive(name);
+    setWorkspaces((w) => w.map((x) => x.id === activeWs ? { ...x, conda: name } : x));
+  };
+  const renameWorkspace = (id: string, name: string): void => {
+    setWorkspaces((w) => w.map((x) => x.id === id ? { ...x, name: name.trim() || x.name } : x));
+    setRenamingWs(null);
+  };
+  const deleteWorkspace = (id: string): void => {
+    setWorkspaces((w) => w.filter((x) => x.id !== id));
+    if (activeWs === id) { setActiveWs("global"); setProjectPath(DEFAULT_PROJECT); }
+  };
+
+  // MCP server inventory (left mcp section + right software-modules list).
+  const [mcpServers, setMcpServers] = useState<Array<{ name: string; count: number }>>([]);
+  useEffect(() => {
+    void window.flux?.mcpTools?.().then((tools: Array<{ server: string }>) => {
+      const m = new Map<string, number>();
+      for (const tl of tools) m.set(tl.server, (m.get(tl.server) ?? 0) + 1);
+      setMcpServers([...m.entries()].map(([name, count]) => ({ name, count })));
+    }).catch(() => void 0);
+  }, []);
+
+  // Studio-native skills (repo skills/*.md) for the left rail.
+  const [studioSkills, setStudioSkills] = useState<Array<{ name: string; title: string }>>([]);
+  useEffect(() => {
+    void window.flux?.mcpCall?.("list_skills", {})
+      .then((text: string) => { try { setStudioSkills(JSON.parse(text).skills ?? []); } catch { /* */ } })
+      .catch(() => void 0);
+  }, []);
+
+  // Asset detail modal (per-asset actions: pins / build / usd / props).
+  const [detailAsset, setDetailAsset] = useState<{ id: string; type: string; components?: string[] } | null>(null);
   const triageCount = events.filter((e) => e.topic === "triage.result").length;
   useEffect(() => { if (triageCount > 0) setProblemsOpen(true); }, [triageCount]);
 
@@ -90,6 +186,32 @@ export function App() {
     });
     return () => off?.();
   }, []);
+
+  // ── Terminal menu (Ctrl+`) opens the bottom drawer on its terminal tab ──
+  useEffect(() => {
+    const off = window.flux?.onOpenTerminal?.(() => { setProblemsOpen(true); setBottomTab("terminal"); });
+    return () => off?.();
+  }, []);
+
+  // ── session ops: each session is a stable slot; chatMsgs is the live buffer
+  // of whichever slot is active. Switching saves the buffer back first.
+  const newSession = () => {
+    const id = `s-${Date.now()}`;
+    setSessions((s) => [
+      ...s.map((x) => x.id === activeSession ? { ...x, msgs: chatMsgs } : x),
+      { id, name: `Session ${s.length + 1}`, msgs: [] },
+    ]);
+    setChatMsgs([]);
+    setActiveSession(id);
+  };
+  const openSession = (id: string) => {
+    if (id === activeSession) return;
+    const target = sessions.find((x) => x.id === id);
+    if (!target) return;
+    setSessions((s) => s.map((x) => x.id === activeSession ? { ...x, msgs: chatMsgs } : x));
+    setChatMsgs(target.msgs);
+    setActiveSession(id);
+  };
 
   const state = useMemo(() => deriveState(events), [events]);
 
@@ -185,47 +307,88 @@ export function App() {
     if (last?.role === "agent" && last.codeBlock) { setFileContent(last.codeBlock); setActiveFile("agent_generated.py"); setActiveFilePath(""); }
   }, [chatMsgs]);
 
+  // ── alarm banner: latest alarm.critical not yet followed by alarm.cleared ──
+  const alarmActive = useMemo(() => {
+    let active: FluxEvent | null = null;
+    for (const e of events) {
+      if (e.topic === "alarm.critical") active = e;
+      else if (e.topic === "alarm.cleared") active = null;
+    }
+    return active;
+  }, [events]);
+
   return (
     <div className="shell" style={{ ["--lw" as string]: `${leftWidth}px`, ["--rw" as string]: `${rightWidth}px` }}>
+      {alarmActive && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 1000,
+          background: "#b71c1c", color: "#fff", padding: "6px 16px",
+          display: "flex", alignItems: "center", gap: 12, fontSize: 12, fontWeight: 600,
+        }}>
+          <span>{t("alarm.banner")}</span>
+          <span style={{ fontWeight: 400, opacity: 0.85, fontFamily: "var(--mono, monospace)", fontSize: 11 }}>
+            {String((alarmActive.data as { message?: string })?.message ?? "")}
+          </span>
+          <button className="chat-send" style={{ marginLeft: "auto", background: "#fff", color: "#b71c1c" }}
+            onClick={() => void window.flux?.alarmClear?.()}>{t("alarm.resume")}</button>
+        </div>
+      )}
       <LeftSidebar tab={leftTab} setTab={setLeftTab} events={events} state={state}
         treeRoot={treeRoot} toggleFolder={toggleFolder} activeFile={activeFile} openFile={openFile}
         customOpen={customOpen} setCustomOpen={setCustomOpen} projectPath={projectPath} setProjectPath={setProjectPath}
         onContextMenu={onContextMenu} renaming={renaming} setRenaming={setRenaming} doRename={doRename}
         creating={creating} setCreating={setCreating} doCreate={doCreate} refreshTree={refreshTree}
-        apiConfig={apiConfig} setApiConfig={setApiConfig} switchProvider={switchProvider} />
+        apiConfig={apiConfig} setApiConfig={setApiConfig} switchProvider={switchProvider}
+        sessions={sessions} activeSession={activeSession} newSession={newSession} openSession={openSession}
+        workspaces={workspaces} activeWs={activeWs} renamingWs={renamingWs} setRenamingWs={setRenamingWs}
+        addWorkspace={addWorkspace} selectWorkspace={selectWorkspace} renameWorkspace={renameWorkspace}
+        deleteWorkspace={deleteWorkspace} mcpServers={mcpServers} condaEnvs={condaEnvs} condaActive={condaActive} chooseConda={chooseConda} studioSkills={studioSkills}
+        openSkill={(md: string) => { setWikiContent(md); setCenterTab("wiki"); }} />
       <div className="resize-bar resize-l" onMouseDown={startDrag("left")} />
       <main className="chat-area">
         <div className="center-tabs">
-          <div className={`center-tab ${centerTab === "chat" ? "on" : ""}`} onClick={() => setCenterTab("chat")}>{t("tab.chat")}</div>
-          <div className={`center-tab ${centerTab === "fluxweave" ? "on" : ""}`} onClick={() => setCenterTab("fluxweave")}>{t("tab.fluxweave")}</div>
-          <div className={`center-tab ${centerTab === "unitport" ? "on" : ""}`} onClick={() => setCenterTab("unitport")}>{t("tab.unitport")}</div>
-          <div className={`center-tab ${centerTab === "hil" ? "on" : ""}`} onClick={() => setCenterTab("hil")}>{t("tab.hil")}</div>
+          <div data-guide="tab-chat" className={`center-tab ${centerTab === "chat" ? "on" : ""}`} onClick={() => setCenterTab("chat")}>{t("tab.chat")}</div>
+          <div data-guide="tab-assets" className={`center-tab ${centerTab === "assets" ? "on" : ""}`} onClick={() => setCenterTab("assets")}>{t("tab.assets")}</div>
+          <div data-guide="tab-sim" className={`center-tab ${centerTab === "sim" ? "on" : ""}`} onClick={() => setCenterTab("sim")}>{t("tab.sim")}</div>
+          <div data-guide="tab-real" className={`center-tab ${centerTab === "real" ? "on" : ""}`} onClick={() => setCenterTab("real")}>{t("tab.real")}</div>
           {wikiContent && <div className={`center-tab ${centerTab === "wiki" ? "on" : ""}`} onClick={() => setCenterTab("wiki")}>{t("tab.plan")}</div>}
         </div>
         {centerTab === "chat" && (
           <ChatArea msgs={chatMsgs} input={chatInput} setInput={setChatInput} sendChat={sendChat}
             fileContent={fileContent} activeFile={activeFile} saveFile={saveFile} state={state} />
         )}
-        {centerTab === "fluxweave" && <FluxWeavePanel />}
-        {centerTab === "unitport" && <UnitPortPanel events={events} />}
-        {centerTab === "hil" && <HilPanel events={events} />}
+        {centerTab === "assets" && <AssetsPanel events={events} sub={assetsSub} setSub={setAssetsSub} />}
+        {centerTab === "sim" && <UnitPortPanel events={events} />}
+        {centerTab === "real" && <HilPanel events={events} />}
         {centerTab === "wiki" && wikiContent && (
           <div className="wiki-view" dangerouslySetInnerHTML={{ __html: mdToHtml(wikiContent) }} />
         )}
-        <div onClick={() => setProblemsOpen(!problemsOpen)}
-          style={{ borderTop: "1px solid var(--ink, #333)", padding: "3px 12px", fontSize: 10, cursor: "pointer",
-                   fontFamily: "var(--mono, monospace)", color: "var(--grey-3, #888)", userSelect: "none", flexShrink: 0 }}>
-          {problemsOpen ? "▾" : "▴"} {t("prob.title")} · {events.filter((e) => e.topic === "build.diagnostic").length} {t("prob.diagnostics")} · {events.filter((e) => e.topic === "triage.result").length} {t("prob.triage")}
+        <div className="drawer-tabs">
+          <span style={{ padding: "4px 8px", cursor: "pointer" }} onClick={() => setProblemsOpen(!problemsOpen)}>
+            {problemsOpen ? "▾" : "▴"}
+          </span>
+          <span className={`drawer-tab ${problemsOpen && bottomTab === "problems" ? "on" : ""}`}
+            onClick={() => { setBottomTab("problems"); setProblemsOpen(bottomTab === "problems" ? !problemsOpen : true); }}>
+            {t("prob.title")} · {events.filter((e) => e.topic === "build.diagnostic").length + events.filter((e) => e.topic === "triage.result").length}
+          </span>
+          <span className={`drawer-tab ${problemsOpen && bottomTab === "terminal" ? "on" : ""}`}
+            onClick={() => { setBottomTab("terminal"); setProblemsOpen(bottomTab === "terminal" ? !problemsOpen : true); }}>
+            {t("term.title")}
+          </span>
         </div>
         {problemsOpen && (
-          <div style={{ height: 220, flexShrink: 0, borderTop: "1px solid #222" }}>
-            <ProblemsPanel events={events} openFile={openFileByPath} />
+          <div style={{ height: 220, flexShrink: 0 }}>
+            {bottomTab === "problems"
+              ? <ProblemsPanel events={events} openFile={openFileByPath} />
+              : <TerminalPanel events={events} cwd={projectPath} condaBin={condaBin} />}
           </div>
         )}
       </main>
-      <RightPanel events={events} state={state} fluxAssets={fluxAssets} building={building} buildResult={buildResult} doBuild={doBuild}
-        rawEvents={events} />
+      <RightPanel events={events} state={state} fluxAssets={fluxAssets}
+        rawEvents={events} wsLabel={wsLabel} mcpServers={mcpServers} onOpenAsset={setDetailAsset} />
       <Footer state={state} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
+      {detailAsset && <AssetDetail asset={detailAsset} projectPath={projectPath} onClose={() => setDetailAsset(null)} />}
+      <PetAssistant events={events} centerTab={centerTab} assetsSub={assetsSub} />
       {ctxMenu && <ContextMenu ctxMenu={ctxMenu} closeCtx={closeCtx} refreshTree={refreshTree}
         doDelete={doDelete} copyPath={copyPath} copyRelPath={copyRelPath} addToChat={addToChat}
         setCreating={setCreating} projectPath={projectPath}
@@ -304,23 +467,55 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
     creating, setCreating, doCreate, refreshTree, apiConfig, setApiConfig, switchProvider } = props;
   return (
     <aside className="left-sidebar">
+      {/* ── Workspaces: first-class, PilotDeck-style (add/rename/delete) ── */}
+      <div className="ws-bar">
+        <div style={{ fontSize: 9, fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--grey-3)", marginBottom: 4, display: "flex", alignItems: "center" }}>
+          {t("ws.title")}
+          <button className="ft-btn" style={{ marginLeft: "auto" }} title={t("ws.add")} onClick={() => void props.addWorkspace()}>＋</button>
+        </div>
+        {props.workspaces?.map((ws: { id: string; name: string; path: string }) => (
+          <div key={ws.id} className={`ws-row ${props.activeWs === ws.id ? "on" : ""}`} onClick={() => props.selectWorkspace(ws.id)}>
+            <span className="ws-dot" />
+            {props.renamingWs === ws.id ? (
+              <input className="input-inline" autoFocus defaultValue={ws.name}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") props.renameWorkspace(ws.id, (e.target as HTMLInputElement).value);
+                  if (e.key === "Escape") props.setRenamingWs(null);
+                }}
+                onBlur={(e) => props.renameWorkspace(ws.id, e.target.value)} />
+            ) : (
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ws.path}>{ws.name}</span>
+            )}
+            {ws.id !== "global" && props.renamingWs !== ws.id && (
+              <span className="ws-actions">
+                <button className="ft-btn" title={t("ws.rename")} onClick={(e) => { e.stopPropagation(); props.setRenamingWs(ws.id); }}>✎</button>
+                <button className="ft-btn" title={t("ws.remove")} onClick={(e) => { e.stopPropagation(); props.deleteWorkspace(ws.id); }}>🗑</button>
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* upper half: session | explorer */}
       <div className="ls-tabs">
-        {(["session", "memory", "explorer"] as LeftTab[]).map((t) => (
-          <div key={t} className={`ls-tab ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>{t}</div>
+        {(["session", "explorer"] as LeftTab[]).map((tt) => (
+          <div key={tt} className={`ls-tab ${tab === tt ? "on" : ""}`} onClick={() => setTab(tt)}>{tt}</div>
         ))}
       </div>
       <div className="ls-content">
         {tab === "session" && (
           <div>
-            <button className="ls-new-btn" style={{ marginBottom: 8 }}>+ New Session</button>
-            <div className="sess-item active">▶ Current ({events.length} events)</div>
-          </div>
-        )}
-        {tab === "memory" && (
-          <div>
-            <div className="mem-item"><span className="mem-k">device.attached</span> ×{events.filter((e:FluxEvent)=>e.topic==="device.attached").length}</div>
-            <div className="mem-item"><span className="mem-k">openocd.event</span> ×{events.filter((e:FluxEvent)=>e.topic==="openocd.event").length}</div>
-            <div className="mem-item"><span className="mem-k">asset.committed</span> ×{events.filter((e:FluxEvent)=>e.topic==="asset.committed").length}</div>
+            <button className="ls-new-btn" style={{ marginBottom: 8 }} onClick={props.newSession}>+ New Session</button>
+            {props.sessions?.map((sx: { id: string; name: string; msgs: unknown[] }) => (
+              <div key={sx.id} className={`sess-item ${props.activeSession === sx.id ? "active" : ""}`}
+                onClick={() => props.openSession(sx.id)}>
+                {props.activeSession === sx.id ? "▶ " : ""}{sx.name}
+                <span style={{ float: "right", color: "var(--grey-3)", fontSize: 10 }}>
+                  {props.activeSession === sx.id ? "" : `${sx.msgs.length}`}
+                </span>
+              </div>
+            ))}
           </div>
         )}
         {tab === "explorer" && (
@@ -346,9 +541,9 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
           </div>
         )}
       </div>
-      {/* Customizations */}
+
+      {/* lower half: api / agent / memory / mcp / skill / conda */}
       <div className="custom-section">
-        {/* API Provider (cc-switch style) */}
         <div className="custom-h" onClick={() => setCustomOpen(customOpen === "api" ? null : "api")}>
           {customOpen === "api" ? "▾" : "▸"} {t("side.api")}
         </div>
@@ -368,21 +563,64 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
             </div>
           </div>
         )}
-        {/* Other customizations */}
-        {[
-          { id: "workflow", label: t("side.workflow"), items: state.workflow?.steps.map((s:any)=>`${s.name}: ${s.op}`) ?? ["(none)"] },
-          { id: "agents", label: t("side.agents"), items: ["openocd-task", "brain-agent"] },
-          { id: "skills", label: t("side.skills"), items: ["characterize", "codegen", "schematic→netlist", "+ Install from ClawhHub"] },
-          { id: "mcp", label: t("side.mcp"), items: ["(v2) dimos", "(v2) scp"] },
-          { id: "tools", label: t("side.tools"), items: ["riscv GCC", "HPM_SDK", "HPM OpenOCD"] },
-        ].map((s) => (
-          <div key={s.id}>
-            <div className="custom-h" onClick={() => setCustomOpen(customOpen === s.id ? null : s.id)}>{customOpen === s.id ? "▾" : "▸"} {s.label}</div>
-            {customOpen === s.id && s.items.map((item: string, i: number) => (
-              <div key={i} className="custom-item"><span className={`dot-sm ${i === 0 ? "on" : ""}`} />{item}</div>
+
+        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "agent" ? null : "agent")}>
+          {customOpen === "agent" ? "▾" : "▸"} {t("side.agents")}
+        </div>
+        {customOpen === "agent" && (
+          <>
+            <div className="custom-item"><span className={`dot-sm ${state.deviceAttached ? "on" : ""}`} />openocd-task · {state.real ? "REAL" : "mock"}</div>
+            <div className="custom-item" title={t("rp.engineTip")}><span className={`dot-sm ${state.brainReady ? "on" : ""}`} />{t("rp.engine")}</div>
+            <div className="custom-item"><span className="dot-sm on" />mission-engine</div>
+            <div className="custom-item"><span className="dot-sm on" />training-agent</div>
+          </>
+        )}
+
+        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "memory" ? null : "memory")}>
+          {customOpen === "memory" ? "▾" : "▸"} {t("side.memory")}
+        </div>
+        {customOpen === "memory" && (
+          <>
+            {["asset.committed", "mission.milestone", "triage.result"].map((k) => (
+              <div key={k} className="custom-item"><span className="dot-sm on" />{k} ×{events.filter((e: FluxEvent) => e.topic === k).length}</div>
             ))}
+            <div className="custom-item" style={{ cursor: "pointer" }} title={t("rp.dreamTip")}
+              onClick={() => void window.flux?.mcpCall?.("dream", {})}>🌙 {t("side.dream")}</div>
+          </>
+        )}
+
+        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "mcp" ? null : "mcp")}>
+          {customOpen === "mcp" ? "▾" : "▸"} {t("side.mcp")}
+        </div>
+        {customOpen === "mcp" && (
+          (props.mcpServers?.length ? props.mcpServers : [{ name: "(loading…)", count: 0 }]).map((srv: { name: string; count: number }) => (
+            <div key={srv.name} className="custom-item"><span className="dot-sm on" />{srv.name} · {srv.count} tools</div>
+          ))
+        )}
+
+        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "skills" ? null : "skills")}>
+          {customOpen === "skills" ? "▾" : "▸"} {t("side.skills")}
+        </div>
+        {customOpen === "skills" && (props.studioSkills?.length ? props.studioSkills : [{ name: "board-bringup", title: "" }]).map((sk: { name: string; title: string }, i: number) => (
+          <div key={i} className="custom-item" style={{ cursor: "pointer" }}
+            title={sk.title}
+            onClick={() => void window.flux?.mcpCall?.("get_skill", { name: sk.name }).then((md: string) => props.openSkill?.(md))}>
+            <span className="dot-sm on" />📖 {sk.name}
           </div>
         ))}
+
+        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "conda" ? null : "conda")}>
+          {customOpen === "conda" ? "▾" : "▸"} {t("side.conda")}
+        </div>
+        {customOpen === "conda" && (
+          (props.condaEnvs?.length ? props.condaEnvs : [{ name: "(none)", path: "" }]).map((env: CondaEnv) => (
+            <div key={env.name} className="custom-item" style={{ cursor: "pointer", fontWeight: props.condaActive === env.name ? 600 : 400 }}
+              onClick={() => env.path && props.chooseConda?.(env.name)}>
+              <span className={`dot-sm ${props.condaActive === env.name ? "on" : ""}`} />{env.name}
+              {props.condaActive === env.name && <span style={{ marginLeft: "auto", color: "var(--accent)", fontSize: 9 }}>active</span>}
+            </div>
+          ))
+        )}
       </div>
     </aside>
   );
@@ -395,10 +633,8 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
     <main className="chat-area">
       <div className="chat-messages">
         {activeFile && fileContent && (
-          <div className="chat-code-block">
-            <div style={{ fontSize: 10, color: "#888", marginBottom: 4 }}>📄 {activeFile}</div>
-            <textarea defaultValue={fileContent.slice(0, 5000)} rows={Math.min(20, fileContent.split("\n").length)} />
-            <div className="chat-code-actions"><button className="chat-code-btn" onClick={() => saveFile(fileContent)}>Save</button></div>
+          <div style={{ marginBottom: 12 }}>
+            <CodeView fileName={activeFile} content={fileContent} onSave={(text) => saveFile(text)} />
           </div>
         )}
         {msgs.length === 0 && !activeFile && (
@@ -417,7 +653,10 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
         ))}
       </div>
       <div className="chat-input-row">
-        <input className="chat-input" type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }} placeholder="Ask MiniCPM-V…" />
+        <textarea className="chat-input" rows={1} value={input}
+          onChange={(e) => { setInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${Math.min(140, e.target.scrollHeight)}px`; }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); (e.target as HTMLTextAreaElement).style.height = "auto"; } }}
+          placeholder="Ask anything…  (Enter 发送 · Shift+Enter 换行)" />
         <button className="chat-send" onClick={sendChat}>Send</button>
       </div>
     </main>
@@ -425,13 +664,27 @@ function ChatArea(props: any) { // eslint-disable-line @typescript-eslint/no-exp
 }
 
 // ═══ Right Panel ═══
+// Collapsible right-panel section (issue 11): header toggles, extra widgets
+// (badges/buttons) live in the header without triggering the fold.
+function Fold({ title, defaultOpen = true, extra, children }: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rp-section">
+      <div className="rp-h fold-h" onClick={() => setOpen(!open)}>
+        <span className="fold-caret">{open ? "▾" : "▸"}</span>
+        <span style={{ flex: 1 }}>{title}</span>
+        {extra && <span onClick={(e) => e.stopPropagation()}>{extra}</span>}
+      </div>
+      {open && children}
+    </div>
+  );
+}
+
 function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const { t } = useLang();
-  const { events, state, fluxAssets, building, buildResult, doBuild, rawEvents } = props;
-  const ocdEvents = events.filter((e: FluxEvent) => e.topic === "openocd.event").slice(-3);
+  const { events, state, fluxAssets, rawEvents, mcpServers, onOpenAsset } = props;
   const assets = events.filter((e: FluxEvent) => e.topic === "asset.committed");
 
-  // ── Infrastructure Core visualization data ──
   const topics = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const e of rawEvents) { counts[e.topic] = (counts[e.topic] || 0) + 1; }
@@ -445,18 +698,29 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
     { name: "agent", level: 30, color: "#5B7BFF", count: (topics["agent.event"] || 0) + (topics["cmd.chat"] || 0) },
     { name: "asset", level: 30, color: "#00aa44", count: (topics["asset.committed"] || 0) + (topics["workflow.published"] || 0) },
   ];
-  const flowSteps = state.workflow?.steps || [];
-  const topicFlow = rawEvents.slice(-8).reverse();
+
+  // Software modules: everything the kernel can schedule that is NOT a
+  // physical probe — with what each one is allowed to touch.
+  const MOD_PERMS: Record<string, Array<[string, boolean]>> = {
+    "flux-insight": [[t("mod.pLlm"), true], [t("mod.pAsset"), true], [t("mod.pHw"), false]],
+    "unitport": [[t("mod.pProc"), true], [t("mod.pHw"), false]],
+    "isaacsim": [[t("mod.pSim"), true], [t("mod.pHw"), false]],
+    "physical": [[t("mod.pHw"), true]],
+  };
+  const kernelModules: Array<{ name: string; desc: string; on: boolean; perms: Array<[string, boolean]> }> = [
+    { name: "hil-runner", desc: t("mod.hil"), on: true, perms: [[t("mod.pHw"), true], [t("mod.pSim"), true]] },
+    { name: "build-service", desc: t("mod.build"), on: true, perms: [[t("mod.pProc"), true]] },
+    { name: "training-agent", desc: t("mod.train"), on: true, perms: [[t("mod.pProc"), true]] },
+    { name: "git", desc: t("mod.git"), on: false, perms: [[t("mod.pFs"), false]] },
+  ];
 
   return (
     <aside className="right-panel">
-      {/* ═══ Infrastructure Core (实时可视化) ═══ */}
-      <div className="rp-section infra-viz">
-        <div className="rp-h">⚡ Infrastructure Core</div>
-
-        {/* 3×2 Scheduler — priority bands as live bars */}
-        <div className="infra-block">
-          <div className="infra-label">3×2 Scheduler · Priority Bands</div>
+      {/* ── the dev flow, visualized (merged Overview + Insight Loop) ── */}
+      <Fold title={t("rp.pipeline")}>
+        <PipelineViz events={rawEvents} />
+        <div className="infra-block" style={{ marginTop: 6 }}>
+          <div className="infra-label">Priority Bands</div>
           <div className="priority-bars">
             {priorityBands.map((b) => (
               <div key={b.name} className="pbar-row">
@@ -469,110 +733,93 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
             ))}
           </div>
         </div>
+      </Fold>
 
-        {/* uORB Bus — live topic flow */}
-        <div className="infra-block">
-          <div className="infra-label">uORB Bus · Live Topic Flow</div>
-          <div className="topic-flow">
-            {topicFlow.length === 0 ? (
-              <div className="empty-hint" style={{ padding: "4px 0" }}>waiting…</div>
-            ) : topicFlow.map((e: FluxEvent, i: number) => (
-              <div key={i} className="topic-flow-item" style={{ opacity: 1 - i * 0.1 }}>
-                <span className="tf-dot" style={{ background: topicColor(e.topic) }} />
-                <span className="tf-topic">{e.topic}</span>
-                <span className="tf-src">{e.source}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Capability — status badges */}
-        <div className="infra-block">
-          <div className="infra-label">Capability Auth</div>
-          <div className="cap-badges">
-            <span className="cap-badge on">ed25519 ✓</span>
-            <span className="cap-badge on">openocd-task</span>
-            <span className="cap-badge on">brain-agent</span>
-            <span className="cap-badge on">policy-gate</span>
-          </div>
-        </div>
-
-        {/* Supervisor — process status */}
-        <div className="infra-block">
-          <div className="infra-label">Supervisor · Processes</div>
-          <div className="proc-grid">
-            <div className={`proc-tile ${state.brainReady ? "alive" : ""}`}>
-              <div className={`proc-dot ${state.brainReady ? "on" : ""}`} />
-              <span>brain</span>
-              <span className="proc-pid">{state.brainReady ? "●" : "…"}</span>
-            </div>
-            <div className={`proc-tile ${state.deviceAttached ? "alive" : ""}`}>
-              <div className={`proc-dot ${state.deviceAttached ? "on" : ""}`} />
-              <span>openocd</span>
-              <span className="proc-pid">{state.deviceAttached ? (state.real ? "●" : "○") : "…"}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Flow axis — workflow DAG visual */}
-        {flowSteps.length > 0 && (
-          <div className="infra-block">
-            <div className="infra-label">Flow Axis · Workflow DAG</div>
-            <div className="dag-visual">
-              {flowSteps.map((s: { name: string; op: string }, i: number) => (
-                <div key={s.name} className="dag-node-wrap">
-                  <div className={`dag-node ${i < 2 ? "done" : ""}`}>
-                    <span className="dag-num">{i + 1}</span>
-                    <span className="dag-name">{s.name}</span>
-                  </div>
-                  {i < flowSteps.length - 1 && <div className="dag-arrow">→</div>}
-                </div>
+      {/* ── software modules: kernel-schedulable, permission-scoped ── */}
+      <Fold title={t("rp.modules")}>
+        {(mcpServers ?? []).map((srv: { name: string; count: number }) => (
+          <div key={srv.name} className="mod-row">
+            <span className="ws-dot" style={{ background: "#4caf50" }} />
+            <span style={{ fontWeight: 600 }}>{srv.name}</span>
+            <span style={{ color: "var(--grey-3)" }}>{srv.count}</span>
+            <span style={{ marginLeft: "auto", display: "flex", gap: 3, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {(MOD_PERMS[srv.name] ?? [[t("mod.pProc"), true]] as Array<[string, boolean]>).map(([pm, g], i) => (
+                <span key={i} className={`mod-chip ${g ? "grant" : "deny"}`}>{pm}{g ? " ✓" : " ✗"}</span>
               ))}
-            </div>
+            </span>
           </div>
-        )}
-      </div>
+        ))}
+        {kernelModules.map((m) => (
+          <div key={m.name} className="mod-row">
+            <span className="ws-dot" style={{ background: m.on ? "#4caf50" : "var(--grey-2)" }} />
+            <span style={{ fontWeight: 600, color: m.on ? "var(--ink)" : "var(--grey-3)" }}>{m.name}</span>
+            <span style={{ color: "var(--grey-3)" }}>{m.desc}</span>
+            <span style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
+              {m.perms.map(([pm, g], i) => (
+                <span key={i} className={`mod-chip ${g ? "grant" : "deny"}`}>{pm}{g ? " ✓" : " ✗"}</span>
+              ))}
+            </span>
+          </div>
+        ))}
+        <div style={{ fontSize: 9.5, color: "var(--grey-3)", marginTop: 4 }} title={t("rp.capTip")}>{t("rp.capHint")}</div>
+      </Fold>
 
-      {/* Flux Insight Loop */}
-      <div className="rp-section">
-        <div className="rp-h">Flux Insight Loop</div>
-        <div className="kpi-row">
-          <div className="kpi-cell"><div className="lbl">Research</div><div className="nb accent">{events.filter((e:FluxEvent)=>e.topic==="workflow.published").length}</div></div>
-          <div className="kpi-cell"><div className="lbl">Execute</div><div className="nb">{ocdEvents.length}</div></div>
-        </div>
-        <iframe src="http://127.0.0.1:8420" style={{ width: "100%", height: 200, border: "1px solid var(--border)", borderRadius: 3 }} title="Flux Insight" />
-      </div>
-      <div className="rp-section">
-        <div className="rp-h">Physical Subagents</div>
+      <Fold title={t("rp.subagents")} defaultOpen={false}>
         <div className="rp-card">
-          <div className="rp-meta"><span className={`rp-status ${state.deviceAttached?"on":"off"}`} /> C · {state.real?"REAL":"MOCK"}</div>
+          <div className="rp-meta"><span className={`rp-status ${state.deviceAttached ? "on" : "off"}`} /> C · {state.real ? "REAL" : "MOCK"}</div>
           <div className="rp-title">openocd-task</div>
           <div className="rp-chips"><span className="rp-chip">halt</span><span className="rp-chip">flash</span><span className="rp-chip">mdw</span></div>
         </div>
         <div className="rp-card">
-          <div className="rp-meta"><span className={`rp-status ${state.brainReady?"on":"off"}`} /> Python · {state.brainReady?"ready":"..."}</div>
-          <div className="rp-title">brain-agent</div>
+          <div className="rp-meta"><span className={`rp-status ${state.brainReady ? "on" : "off"}`} /> Python · {state.brainReady ? "ready" : "..."}</div>
+          <div className="rp-title" title={t("rp.engineTip")}>{t("rp.engine")}</div>
         </div>
-      </div>
-      <div className="rp-section">
-        <div className="rp-h">{t("rp.build")}</div>
-        <button className="chat-send" style={{ width: "100%", marginBottom: 4 }} disabled={building} onClick={doBuild}>{building ? t("rp.building") : t("rp.buildBtn")}</button>
-        {buildResult && <div style={{ fontSize: 10, fontFamily: "var(--mono)", color: "var(--grey-3)", wordBreak: "break-all" }}>{buildResult.slice(0,200)}</div>}
-      </div>
-      <div className="rp-section">
-        <div className="rp-h">{t("rp.assets")}</div>
+      </Fold>
+
+      {/* ── DevReady assets: click a card for pins / build / usd / props ── */}
+      <Fold title={t("rp.assets")} extra={
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, border: "1px solid var(--grey-2)",
+            background: props.wsLabel === "global" ? "var(--grey-1)" : "rgba(0,47,167,.08)",
+            color: props.wsLabel === "global" ? "var(--grey-3)" : "var(--accent)" }}>
+            {props.wsLabel ?? "global"}
+          </span>
+          <button data-guide="asset-export" className="ft-btn" title={t("rp.export")}
+            onClick={async () => {
+              const out = `~/.flux/exports/${props.wsLabel ?? "assets"}-${Date.now()}.json`;
+              const r = JSON.parse(await (window as any).flux?.mcpCall?.("export_asset", { out_path: out }));
+              alert(`${t("rp.exported")}: ${r.count} → ${r.path}`);
+            }}>⬆</button>
+          <button data-guide="asset-import" className="ft-btn" title={t("rp.import")}
+            onClick={async () => {
+              const f = await (window as any).flux?.openFile?.([{ name: "Flux assets", extensions: ["json"] }]);
+              if (!f) return;
+              const r = JSON.parse(await (window as any).flux?.mcpCall?.("import_asset", { path: f }));
+              alert(`${t("rp.imported")}: ${r.imported} (skipped ${r.skipped})`);
+            }}>⬇</button>
+          <button data-guide="asset-dream" className="ft-btn" title={t("rp.dreamTip")}
+            onClick={() => void (window as any).flux?.mcpCall?.("dream", {})}>🌙</button>
+        </span>
+      }>
         <div className="kpi-row">
           <div className="kpi-cell"><div className="lbl">{t("rp.events")}</div><div className="nb">{assets.length}</div></div>
           <div className="kpi-cell"><div className="lbl">{t("rp.assetCount")}</div><div className="nb accent">{fluxAssets?.length ?? 0}</div></div>
         </div>
+        <div style={{ fontSize: 9.5, color: "var(--grey-3)", margin: "2px 0 4px" }}>{t("rp.assetHint")}</div>
         {fluxAssets?.map((a: any, i: number) => (
-          <div key={i} className="rp-card">
+          <div key={i} data-guide={i === 0 ? "asset-card" : undefined} className="rp-card" style={{ cursor: "pointer" }} onClick={() => onOpenAsset?.(a)}>
             <div className="rp-meta">{(a.type || "asset").toUpperCase()}</div>
             <div className="rp-title" style={{ fontSize: 11 }}>{a.id}</div>
             <div style={{ fontSize: 10, color: "var(--grey-3)" }}>{(a.components ?? []).slice(0, 4).join(" · ")}</div>
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              <span className="mod-chip">📌 {t("ad.pins")}</span>
+              <span className="mod-chip">🔧 {t("ad.build")}</span>
+              <span className="mod-chip">🧊 {t("ad.usd")}</span>
+              <span className="mod-chip">⋯</span>
+            </div>
           </div>
         ))}
-      </div>
+      </Fold>
     </aside>
   );
 }
@@ -585,23 +832,9 @@ function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-expli
     <footer className="footbar">
       <div className="stage" onClick={() => setLang(lang === "zh" ? "en" : "zh")} title="switch language" style={{ cursor: "pointer" }}><b>{lang === "zh" ? "中" : "EN"}</b></div><span className="arr">·</span>
       <div className="stage">{t("foot.device")} <b>{state.deviceAttached ? (state.real?"REAL":"mock") : "—"}</b></div><span className="arr">→</span>
-      <div className="stage">brain <b>{state.brainReady?"ready":"..."}</b></div><span className="arr">→</span>
+      <div className="stage" title={t("rp.engineTip")}>{t("rp.engine")} <b>{state.brainReady?"ready":"..."}</b></div><span className="arr">→</span>
       <div className="stage">assets <b>{state.assets}</b></div>
       <div className="spacer" />
-      <div style={{ position: "relative" }}>
-        <div className="stage" onClick={() => setCondaDropdown(!condaDropdown)}>🐍 <b>{condaActive}</b> ▾</div>
-        {condaDropdown && (
-          <div className="conda-dropdown">
-            {condaEnvs.length === 0 ? <div className="conda-item">(no envs)</div> :
-              condaEnvs.map((env: CondaEnv) => (
-                <div key={env.name} className={`conda-item ${condaActive===env.name?"active":""}`}
-                  onClick={() => { setCondaActive(env.name); setCondaDropdown(false); }}>
-                  {condaActive === env.name ? "● " : ""}{env.name}
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
     </footer>
   );
 }

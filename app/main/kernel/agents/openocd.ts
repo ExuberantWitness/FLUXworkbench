@@ -58,26 +58,31 @@ export class OpenOcdAgent {
   }
 
   // ── Real mode (HPM OpenOCD server + TCL RPC) ────────────────────────────────
+  // Board-profile driven: cfgs[] + search path come from skills/boards.json,
+  // so any board (HPM, ST-Link, …) connects through the same path.
   async startReal(
     openocdBin: string,
-    cfgPath: string,
+    cfgs: string[],
+    searchPath: string,
     hpmSdkBase: string,
+    chip = "device",
   ): Promise<void> {
     this.cmds = CMDS_REAL;
     this.isReal = true;
+    const args: string[] = [];
+    if (searchPath) args.push("-s", searchPath);
+    if (hpmSdkBase) args.push("-c", `set HPM_SDK_BASE ${hpmSdkBase}`);
+    for (const c of cfgs) args.push("-f", c);
+    args.push("-c", "init; halt");
     // Start OpenOCD as a server (init; halt; keep running for TCL RPC)
-    this.proc = spawn(
-      openocdBin,
-      ["-c", `set HPM_SDK_BASE ${hpmSdkBase}`, "-f", cfgPath, "-c", "init; halt"],
-      {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          HPM_SDK_BASE: hpmSdkBase,
-          OPENOCD_SCRIPTS: `${hpmSdkBase}/boards/openocd`,
-        },
+    this.proc = spawn(openocdBin, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        HPM_SDK_BASE: hpmSdkBase,
+        OPENOCD_SCRIPTS: searchPath || (hpmSdkBase ? `${hpmSdkBase}/boards/openocd` : ""),
       },
-    );
+    });
     this.proc.stderr?.on("data", (b: Buffer) =>
       console.warn(`[openocd:stderr] ${b.toString().trimEnd()}`));
     this.proc.on("exit", (code) => console.warn(`[openocd] exited code=${code}`));
@@ -96,7 +101,7 @@ export class OpenOcdAgent {
     if (!this.rpc) throw new Error("OpenOCD TCL RPC connect timeout (:6666)");
 
     await this.subscribeCmds();
-    await this.bus.publish(this.evt("device.attached", { device: "hpm6e00-0", chip: "HPM6E0", real: true }));
+    await this.bus.publish(this.evt("device.attached", { device: `${chip}-0`, chip, real: true }));
   }
 
   private async subscribeCmds(): Promise<void> {

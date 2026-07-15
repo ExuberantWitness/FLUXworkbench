@@ -19,7 +19,7 @@ log = logging.getLogger("flux_insight")
 # flux_brain is editable-installed in brain/.venv; fall back to sibling path
 # so the server also works when launched with a bare python3.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flux_brain import asset_store, codegen, dts_ingest, fluxweave_core, pdf_ingest, repl_gen, svd_ingest  # noqa: E402
+from flux_brain import asset_store, codegen, devready, dts_ingest, fluxweave_core, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
 from flux_brain.llm_ollama import SCHEMATIC_PROMPT  # noqa: E402
 from flux_brain.llm_vllm import _data_url  # noqa: E402
 
@@ -49,8 +49,9 @@ _config = {
     "endpoint": os.environ.get("FLUX_LLM_ENDPOINT", "http://127.0.0.1:8000"),
     "api_key": os.environ.get("FLUX_LLM_API_KEY", ""),
     "model": os.environ.get("FLUX_LLM_MODEL", "openbmb/MiniCPM-V-4.6"),
+    "_tier": "text",
 }
-_vision_config = dict(_config)
+_vision_config = {**_config, "_tier": "vision"}
 # Tiered routing (PilotDeck-style difficulty classification, own implementation):
 # light tier for cheap/mechanical calls, heavy tier for structured generation.
 _tiers: dict[str, dict[str, str]] = {}
@@ -68,7 +69,7 @@ def _load_llm_json() -> None:
             if k in target:
                 target[k] = str(v)
     for tier, cfg in file_cfg.get("tiers", {}).items():
-        _tiers[tier] = {**_config, **{k: str(v) for k, v in cfg.items()}}
+        _tiers[tier] = {**_config, **{k: str(v) for k, v in cfg.items()}, "_tier": tier}
     log.info(f"llm.json loaded: text={_config['provider']}/{_config['model']} "
              f"vision={_vision_config['provider']}/{_vision_config['model']} "
              f"tiers={[f'{t}:{c['model']}' for t, c in _tiers.items()]}")
@@ -91,7 +92,24 @@ def _route(tool: str, prompt: str) -> dict[str, str]:
 
 STOP_TOKEN_IDS = [248044, 248046]
 
-def _chat(prompt: str, cfg: dict[str, str] | None = None) -> str:
+
+def _record_usage(tool: str, cfg: dict[str, str], data: dict[str, Any], model: str = "") -> None:
+    """Metering hook (P0.3): pull the usage block every provider already returns
+    and persist it. Anthropic uses input/output_tokens, OpenAI-compat prompt/completion.
+    Must never break the call — swallow everything."""
+    try:
+        u = data.get("usage") or {}
+        asset_store.record_usage({
+            "tool": tool, "tier": cfg.get("_tier", "text"),
+            "provider": cfg.get("provider", ""), "model": model or cfg.get("model", ""),
+            "prompt_tokens": u.get("prompt_tokens", u.get("input_tokens", 0)) or 0,
+            "completion_tokens": u.get("completion_tokens", u.get("output_tokens", 0)) or 0,
+        })
+    except Exception:
+        pass
+
+
+def _chat(prompt: str, cfg: dict[str, str] | None = None, tool: str = "") -> str:
     """Call the configured LLM provider (cfg = routed tier config, default text config)."""
     cfg = cfg or _config
     try:
@@ -109,20 +127,26 @@ def _chat(prompt: str, cfg: dict[str, str] | None = None) -> str:
                 json={"model": model, "messages": [{"role": "user", "content": prompt}],
                       "stop_token_ids": STOP_TOKEN_IDS, "temperature": 0}, timeout=30)
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            data = resp.json()
+            _record_usage(tool, cfg, data, model)
+            return data["choices"][0]["message"]["content"]
         elif provider != "anthropic":
             # openai / deepseek / mimo / any OpenAI-compatible endpoint
             resp = httpx.post(f"{cfg['endpoint']}/chat/completions",
                 headers={"Authorization": f"Bearer {cfg['api_key']}"},
                 json={"model": cfg["model"], "messages": [{"role": "user", "content": prompt}]}, timeout=120)
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+            data = resp.json()
+            _record_usage(tool, cfg, data)
+            return data["choices"][0]["message"]["content"]
         elif provider == "anthropic":
             resp = httpx.post("https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": cfg["api_key"], "anthropic-version": "2023-06-01", "content-type": "application/json"},
                 json={"model": cfg["model"], "max_tokens": 1024, "messages": [{"role": "user", "content": prompt}]}, timeout=120)
             resp.raise_for_status()
-            for block in resp.json().get("content", []):
+            data = resp.json()
+            _record_usage(tool, cfg, data)
+            for block in data.get("content", []):
                 if block.get("type") == "text": return block["text"]
             return "(no text)"
         return f"(unreachable provider: {provider})"
@@ -130,7 +154,7 @@ def _chat(prompt: str, cfg: dict[str, str] | None = None) -> str:
         return f"(LLM unavailable — {provider}: {e})"
 
 
-def _vision(prompt: str, image_path: str) -> str:
+def _vision(prompt: str, image_path: str, tool: str = "") -> str:
     """Multimodal call on the configured provider (local vLLM default, cloud optional)."""
     import httpx
     provider = _vision_config["provider"]
@@ -148,7 +172,9 @@ def _vision(prompt: str, image_path: str) -> str:
                       {"type": "image_url", "image_url": {"url": _data_url(image_path)}}]}],
                   "stop_token_ids": STOP_TOKEN_IDS, "temperature": 0}, timeout=280)
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        data = resp.json()
+        _record_usage(tool, _vision_config, data, model)
+        return data["choices"][0]["message"]["content"]
     elif provider != "anthropic":
         resp = httpx.post(f"{_vision_config['endpoint']}/chat/completions",
             headers={"Authorization": f"Bearer {_vision_config['api_key']}"},
@@ -158,7 +184,9 @@ def _vision(prompt: str, image_path: str) -> str:
                       {"type": "image_url", "image_url": {"url": _data_url(image_path)}}]}]},
             timeout=280)
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        data = resp.json()
+        _record_usage(tool, _vision_config, data)
+        return data["choices"][0]["message"]["content"]
     elif provider == "anthropic":
         import base64
         import mimetypes
@@ -174,7 +202,9 @@ def _vision(prompt: str, image_path: str) -> str:
                       {"type": "text", "text": prompt}]}]},
             timeout=280)
         resp.raise_for_status()
-        for block in resp.json().get("content", []):
+        data = resp.json()
+        _record_usage(tool, _vision_config, data)
+        for block in data.get("content", []):
             if block.get("type") == "text":
                 return block["text"]
         return "(no text)"
@@ -225,8 +255,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"task": {"type": "string"}, "robot": {"type": "string"}}, "required": ["task"]}},
     {"name": "decide_next_phase", "description": "Analyze pipeline results and decide which phase to go to next.",
      "inputSchema": {"type": "object", "properties": {"current_phase": {"type": "string"}, "results": {"type": "object"}}, "required": ["current_phase"]}},
-    {"name": "set_api_config", "description": "Update the LLM provider configuration at runtime.",
-     "inputSchema": {"type": "object", "properties": {"provider": {"type": "string"}, "endpoint": {"type": "string"}, "api_key": {"type": "string"}, "model": {"type": "string"}}}},
+    {"name": "set_api_config", "description": "Update the LLM provider configuration at runtime. preset=light|heavy|vision|text points the text channel at a named config (keys stay in the brain); reload=true restores everything from llm.json.",
+     "inputSchema": {"type": "object", "properties": {"provider": {"type": "string"}, "endpoint": {"type": "string"}, "api_key": {"type": "string"}, "model": {"type": "string"}, "target": {"type": "string"}, "preset": {"type": "string"}, "reload": {"type": "boolean"}}}},
     {"name": "schematic_to_netlist", "description": "Analyze a schematic image (multimodal) and extract a structured netlist; commits it as a devready asset by default.",
      "inputSchema": {"type": "object", "properties": {
          "image_path": {"type": "string"},
@@ -246,8 +276,47 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "goal": {"type": "string"},
          "chip": {"type": "string", "description": "Chip to pull the register-map asset for (default STM32F103xx)"},
-         "board": {"type": "string"}, "backend": {"type": "string", "enum": ["mock", "real", "sim"]}},
+         "board": {"type": "string"}, "backend": {"type": "string", "enum": ["mock", "real", "sim"]},
+         "use_assets": {"type": "boolean", "description": "false = bench 'bare' condition: no asset context, model memory only (default true)"},
+         "pin_model": {"type": "boolean", "description": "true = skip tier routing, use the current text config exactly (bench)"}},
       "required": ["goal"]}},
+    {"name": "compose_devready", "description": "Assemble the full DevReady asset (BODY/MIND/JOURNAL per FLUXmeme spec) for a board: pin map, memory map, boot modes, RTOS availability, build/flash howto, agent skills, linked lifetime records.",
+     "inputSchema": {"type": "object", "properties": {
+         "board": {"type": "string", "description": "board id from skills/boards.json, e.g. hpm6e00evk"}},
+      "required": ["board"]}},
+    {"name": "usage_stats", "description": "LLM token usage + routing-savings estimate (dashboard metering line). Aggregates the llm_usage table.",
+     "inputSchema": {"type": "object", "properties": {
+         "days": {"type": "number", "description": "Lookback window in days (default 7)"},
+         "since_ts": {"type": "number", "description": "Epoch seconds; overrides days when set"}}}},
+    {"name": "dream", "description": "Memory consolidation: merge triage cases into fault-knowledge, compute board-health from HIL reports, roll up old usage, mark duplicate assets superseded. Commits a dream-report. dry_run=true only reports what would happen.",
+     "inputSchema": {"type": "object", "properties": {
+         "dry_run": {"type": "boolean", "description": "Plan only, change nothing (default false)"}}}},
+    {"name": "set_workspace", "description": "WorkSpace isolation: point the asset store (assets + usage, same DB) at <path>/.flux/assets.db. Empty/absent path switches back to the global store. API keys stay global.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "Project directory (empty = global)"}}}},
+    {"name": "export_asset", "description": "Export devready assets to a portable JSON bundle (flux.assets/v1): one asset (asset_id), matching assets (query), or the whole store.",
+     "inputSchema": {"type": "object", "properties": {
+         "out_path": {"type": "string", "description": "Output file, e.g. ~/exports/hpm6e00.assets.json"},
+         "asset_id": {"type": "string"}, "query": {"type": "string"},
+         "limit": {"type": "integer"}},
+      "required": ["out_path"]}},
+    {"name": "import_asset", "description": "Import a flux.assets/v1 bundle (or single envelope JSON) into the current store. overwrite=false skips existing asset_ids.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string"}, "overwrite": {"type": "boolean"}},
+      "required": ["path"]}},
+    {"name": "ingest_pinmux", "description": "Boards without SVDs: parse the vendor pinmux.c into a pin-map asset (pad/function/group). pinmux_path optional when the board has a profile in skills/boards.json.",
+     "inputSchema": {"type": "object", "properties": {
+         "board": {"type": "string"}, "pinmux_path": {"type": "string"}},
+      "required": ["board"]}},
+    {"name": "list_skills", "description": "List FluxStudio-native skills (repo skills/*.md) and board profiles.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "get_skill", "description": "Read one studio skill's markdown by name (e.g. board-bringup).",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "guide_match", "description": "Classify a user's natural-language request into one of the studio's guided flows. Returns {flow_id|null}. flows = [{id, match}] passed by the UI (single source: guides.ts).",
+     "inputSchema": {"type": "object", "properties": {
+         "utterance": {"type": "string"},
+         "flows": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "match": {"type": "string"}}}}},
+      "required": ["utterance", "flows"]}},
     {"name": "fw_generate_urdf", "description": "FluxWeave headless: assemble a URDF from a graph spec (parts + connectors with joint axes/points). Commits the result as a urdf asset.",
      "inputSchema": {"type": "object", "properties": {
          "graph": {"type": "object", "description": "{robot_name, base_link, parts:[{id,link_name,stl_file?,origin_xyz?,color_rgba?}], connectors:[{parent_id('__base__' for base),child_id,parent_axis,child_axis,parent_local_xyz,child_local_xyz,joint_type,joint_name,joint_limit_*,joint_effort,joint_velocity}]}"},
@@ -349,7 +418,7 @@ def _triage(log: str, source: str, context: dict[str, Any]) -> dict[str, Any]:
         "\"affected_files\": [{\"path\",\"line\",\"reason\"}], "
         "\"suggested_fixes\": [{\"title\",\"detail\"}], \"raw_excerpt\": the key error line}"
     )
-    raw = _chat(prompt, _route("triage", prompt))
+    raw = _chat(prompt, _route("triage", prompt), tool="triage")
     try:
         result = _extract_json(raw)
         if result.get("category") not in TRIAGE_CATEGORIES:
@@ -365,49 +434,69 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Execute a tool and return MCP result."""
     if name == "chat":
         message = args["message"]
-        full = _asset_context(message) + message
-        reply = _chat(full, _route("chat", full))
+        # use_assets=False = bench "bare" condition: model answers from memory alone.
+        ctx = _asset_context(message) if args.get("use_assets", True) else ""
+        full = ctx + message
+        reply = _chat(full, _route("chat", full), tool="chat")
         return {"content": [{"type": "text", "text": reply}]}
     elif name == "characterize":
         chip = args.get("chip", "HPM6E00")
         prompt = f"Characterize the {chip} MCU concisely. Return JSON with chip, core, peripherals[], memory_map{{}}, driver_skeleton{{}}."
-        reply = _chat(prompt, _route(name, prompt))
+        reply = _chat(prompt, _route(name, prompt), tool=name)
         return {"content": [{"type": "text", "text": reply}]}
     elif name == "design_urdf":
         desc = args["description"]
         prompt = f"Design a URDF robot model for: {desc}. Return the URDF XML."
-        reply = _chat(prompt, _route(name, prompt))
+        reply = _chat(prompt, _route(name, prompt), tool=name)
         return {"content": [{"type": "text", "text": reply}]}
     elif name == "identify_gap":
         sim = json.dumps(args["sim_result"])
         real = json.dumps(args["real_result"])
         prompt = f"Analyze the sim2real gap. Sim: {sim}. Real: {real}. What parameters need adjustment?"
-        reply = _chat(prompt, _route(name, prompt))
+        reply = _chat(prompt, _route(name, prompt), tool=name)
         return {"content": [{"type": "text", "text": reply}]}
     elif name == "design_reward":
         task = args["task"]
         robot = args.get("robot", "quadruped")
         prompt = f"Design a reward function for {robot} to {task}. List reward components with weights."
-        reply = _chat(prompt, _route(name, prompt))
+        reply = _chat(prompt, _route(name, prompt), tool=name)
         return {"content": [{"type": "text", "text": reply}]}
     elif name == "decide_next_phase":
         phase = args["current_phase"]
         results = json.dumps(args.get("results", {}))
         prompt = f"Pipeline phase '{phase}' completed. Results: {results}. Which phase next? (asset_construct, asset_calibrate, policy_design, deploy, done)"
-        reply = _chat(prompt, _route(name, prompt))
+        reply = _chat(prompt, _route(name, prompt), tool=name)
         return {"content": [{"type": "text", "text": reply}]}
     elif name == "set_api_config":
+        # reload=true: restore everything from llm.json (bench runner cleanup).
+        if args.get("reload"):
+            _load_llm_json()
+            return {"content": [{"type": "text", "text": json.dumps(
+                {"reloaded": True, "provider": _config["provider"], "model": _config["model"]})}]}
+        # preset: point the TEXT channel at a named tier/channel config — the
+        # bench switches models this way so API keys never leave the brain.
+        preset = args.get("preset")
+        if preset:
+            src = {"text": _config, "vision": _vision_config, **_tiers}.get(str(preset))
+            if src is None:
+                raise RuntimeError(f"unknown preset: {preset} (have text/vision/{'/'.join(_tiers)})")
+            for k in ("provider", "endpoint", "api_key", "model"):
+                _config[k] = src[k]
+            log.info(f"API config preset -> {preset}: {_config['provider']} {_config['model']}")
+            return {"content": [{"type": "text", "text": json.dumps(
+                {"preset": preset, "provider": _config["provider"], "model": _config["model"]})}]}
         target = _vision_config if args.get("target") == "vision" else _config
         for k, v in args.items():
             # empty strings must not clobber keys loaded from llm.json
             if k in target and k != "target" and str(v) != "":
                 target[k] = str(v)
         log.info(f"API config updated ({args.get('target', 'text')}): {target['provider']} {target['model']}")
-        return {"content": [{"type": "text", "text": f"{args.get('target', 'text')} provider set to {target['provider']}"}]}
+        return {"content": [{"type": "text", "text": json.dumps(
+            {"target": args.get("target", "text"), "provider": target["provider"], "model": target["model"]})}]}
     elif name == "schematic_to_netlist":
         path = args["image_path"]
         prompt = SCHEMATIC_PROMPT + (f"\nHints: {args['hints']}" if args.get("hints") else "")
-        raw = _vision(prompt, path)
+        raw = _vision(prompt, path, tool="schematic_to_netlist")
         try:
             netlist = _extract_json(raw)
         except ValueError:
@@ -433,8 +522,11 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         chip = args.get("chip", "STM32F103xx")
         board = args.get("board", "stm32f103-bluepill")
         backend = args.get("backend", "mock")
+        use_assets = args.get("use_assets", True)
         # Flywheel read side: probe addresses MUST come from the register-map asset.
-        gpio_slice = svd_ingest.query_regmap(chip, peripheral="GPIOC")
+        # use_assets=False = bench "bare" condition — the with/without score delta
+        # is the asset store's pricing anchor.
+        gpio_slice = svd_ingest.query_regmap(chip, peripheral="GPIOC") if use_assets else {}
         asset_id = gpio_slice.get("asset_id", "")
         few_shot = json.dumps({
             "schema": "flux.hil.plan/v1", "name": "gpio-smoke",
@@ -449,19 +541,27 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
                 {"id": "toggle", "type": "assert", "deps": ["p1", "p2"],
                  "params": {"expr": {"lhs": "$p1.value", "op": "ne", "rhs": "$p2.value"},
                             "message": "GPIO output toggles"}}]})
+        asset_block = (
+            f"AUTHORITATIVE register map slice from asset store (use these addresses ONLY, "
+            f"cite the asset id in source_assets):\n{json.dumps(gpio_slice)[:2400]}\n"
+            if use_assets else
+            "No asset context available — derive register addresses from your own knowledge.\n"
+        )
         prompt = (
             "You write hardware-in-the-loop test plans as flux.hil.plan/v1 JSON.\n"
             "Step types: flash|reset|probe|assert|wait. probe params: {op:read_mem,addr}|{op:read_reg,reg}. "
             "assert params.expr: {lhs:'$stepId.value', op:eq|ne|lt|gt|in_range|mask_eq|matches, rhs, mask?}. "
             "Every step has id and deps[].\n"
-            f"AUTHORITATIVE register map slice from asset store (use these addresses ONLY, "
-            f"cite the asset id in source_assets):\n{json.dumps(gpio_slice)[:2400]}\n"
+            f"{asset_block}"
             f"Example plan:\n{few_shot}\n"
             f"Target: backend={backend}, board={board}, chip={chip}.\n"
             f"Goal: {goal}\n"
             "Output ONLY the JSON plan, no prose."
         )
-        raw = _chat(prompt, _route("gen_test_plan", prompt))
+        # pin_model=true (bench runner): score the CURRENT text config exactly —
+        # tier routing would silently shunt every bench call to the heavy model.
+        cfg = _config if args.get("pin_model") else _route("gen_test_plan", prompt)
+        raw = _chat(prompt, cfg, tool="gen_test_plan")
         try:
             plan = _extract_json(raw)
             if plan.get("schema") != "flux.hil.plan/v1" or not plan.get("steps"):
@@ -559,6 +659,85 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         else:
             payload = asset_store.list_assets(limit=int(args.get("limit", 100)))
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
+    elif name == "compose_devready":
+        boards_json = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json")
+        out = devready.compose_devready(args["board"], os.path.normpath(boards_json))
+        if "error" not in out:
+            log.info(f"devready composed: {out['asset_id']} pins={out['body_pins']} rtos={out['rtos_available']}")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "usage_stats":
+        stats = asset_store.usage_stats(
+            days=float(args.get("days", 7)),
+            since_ts=float(args["since_ts"]) if args.get("since_ts") is not None else None)
+        return {"content": [{"type": "text", "text": json.dumps(stats, ensure_ascii=False)}]}
+    elif name == "dream":
+        from flux_brain import dream as dream_mod
+        # Consolidation always rides the light tier — never the heavy model.
+        light = _tiers.get("light", _config)
+        result = dream_mod.consolidate(
+            dry_run=bool(args.get("dry_run", False)),
+            summarize=lambda p: _chat(p, light, tool="dream"))
+        log.info(f"dream: cats={len(result['merged_categories'])} boards={len(result['boards'])} "
+                 f"superseded={len(result['superseded'])} dry_run={result['dry_run']}")
+        return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}
+    elif name == "set_workspace":
+        info = asset_store.set_workspace(args.get("path") or None)
+        log.info(f"workspace -> {info['workspace']} ({info['asset_count']} assets)")
+        return {"content": [{"type": "text", "text": json.dumps(info, ensure_ascii=False)}]}
+    elif name == "export_asset":
+        out = asset_store.export_assets(
+            args["out_path"], asset_id=args.get("asset_id"),
+            query=args.get("query"), limit=int(args.get("limit", 500)))
+        log.info(f"exported {out['count']} assets -> {out['path']}")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "import_asset":
+        out = asset_store.import_assets(args["path"], overwrite=bool(args.get("overwrite", True)))
+        log.info(f"imported {out['imported']} assets (skipped {out['skipped']})")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "ingest_pinmux":
+        board = args["board"]
+        path = args.get("pinmux_path")
+        if not path:
+            prof = pinmux_ingest.board_profile(board)
+            path = (prof or {}).get("pinmux")
+            if not path:
+                raise RuntimeError(f"no pinmux_path given and no profile for board: {board}")
+        out = pinmux_ingest.commit_pinmux(path, board)
+        if "error" not in out:
+            log.info(f"asset committed: {out['asset_id']} (pinmap, {out['pin_count']} pins)")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "list_skills":
+        return {"content": [{"type": "text", "text": json.dumps({
+            "skills": pinmux_ingest.list_skills(),
+            "boards": [{"id": b.get("id"), "name": b.get("name"), "chip": b.get("chip")}
+                        for b in pinmux_ingest.load_boards()],
+        }, ensure_ascii=False)}]}
+    elif name == "get_skill":
+        text = pinmux_ingest.get_skill(args["name"])
+        if text is None:
+            return {"content": [{"type": "text", "text": json.dumps({"error": f"skill not found: {args['name']}"})}]}
+        return {"content": [{"type": "text", "text": text}]}
+    elif name == "guide_match":
+        flows = args.get("flows", [])
+        ids = [str(f.get("id", "")) for f in flows if f.get("id")]
+        catalog = "\n".join(f"- {f.get('id')}: {f.get('match', '')}" for f in flows)
+        prompt = (
+            "You route a user's request to ONE guided UI flow, or none.\n"
+            f"Flows:\n{catalog}\n\n"
+            f'User said: "{args.get("utterance", "")}"\n'
+            "Pick the single best matching flow id, or null if the user is just asking a "
+            "question / none fits. Reply ONLY JSON: {\"flow_id\": \"<id>\" or null}."
+        )
+        raw = _chat(prompt, _tiers.get("light", _config), tool="guide_match")
+        try:
+            res = _extract_json(raw)
+            fid = res.get("flow_id")
+            if fid not in ids:
+                fid = None
+        except (ValueError, AttributeError):
+            fid = None
+        log.info(f"guide_match: {args.get('utterance', '')[:40]!r} -> {fid}")
+        return {"content": [{"type": "text", "text": json.dumps({"flow_id": fid}, ensure_ascii=False)}]}
     return {"content": [{"type": "text", "text": f"(unknown tool: {name})"}]}
 
 

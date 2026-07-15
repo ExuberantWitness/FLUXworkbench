@@ -12,8 +12,8 @@ interface Connector {
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "var(--grey-6, #1a1a1a)", color: "inherit", border: "1px solid #333",
-  borderRadius: 3, padding: "3px 6px", fontSize: 11, fontFamily: "var(--mono, monospace)",
+  background: "var(--paper)", color: "var(--ink)", border: "1px solid var(--grey-2)",
+  borderRadius: 3, padding: "3px 6px", fontSize: 11, fontFamily: "var(--mono, monospace)", outline: "none",
 };
 
 export function FluxWeavePanel(): React.ReactElement {
@@ -61,14 +61,14 @@ export function FluxWeavePanel(): React.ReactElement {
     <div style={{ display: "flex", gap: 10, padding: 12, height: "100%", overflow: "hidden", fontSize: 11 }}>
       <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ color: "#888" }}>{t("fw.robot")}</span>
+          <span style={{ color: "var(--grey-3)" }}>{t("fw.robot")}</span>
           <input style={{ ...inputStyle, flex: 1 }} value={robotName} onChange={(e) => setRobotName(e.target.value)} />
           <button className="chat-send" disabled={busy} onClick={() => void generate()}>
             {busy ? "…" : t("fw.generate")}
           </button>
         </div>
 
-        <div style={{ color: "#888", fontWeight: 600 }}>{t("fw.parts")} ({parts.length})
+        <div style={{ color: "var(--grey-3)", fontWeight: 600 }}>{t("fw.parts")} ({parts.length})
           <button className="chat-send" style={{ marginLeft: 8, padding: "1px 8px" }}
             onClick={() => setParts([...parts, { id: `link${parts.length + 1}`, link_name: `link${parts.length + 1}` }])}>+</button>
         </div>
@@ -85,7 +85,7 @@ export function FluxWeavePanel(): React.ReactElement {
           </div>
         ))}
 
-        <div style={{ color: "#888", fontWeight: 600 }}>{t("fw.joints")} ({conns.length})
+        <div style={{ color: "var(--grey-3)", fontWeight: 600 }}>{t("fw.joints")} ({conns.length})
           <button className="chat-send" style={{ marginLeft: 8, padding: "1px 8px" }}
             onClick={() => setConns([...conns, {
               parent_id: parts[0]?.id ?? "__base__", child_id: "", joint_name: `joint${conns.length + 1}`,
@@ -96,7 +96,7 @@ export function FluxWeavePanel(): React.ReactElement {
         {conns.map((c, i) => {
           const upd = (patch: Partial<Connector>): void => setConns(conns.map((x, j) => j === i ? { ...x, ...patch } : x));
           return (
-            <div key={i} style={{ border: "1px solid #2a2a2a", borderRadius: 4, padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+            <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 4, padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
               <div style={{ display: "flex", gap: 4 }}>
                 <input style={{ ...inputStyle, width: 100 }} value={c.joint_name} title="joint name" onChange={(e) => upd({ joint_name: e.target.value })} />
                 <select style={inputStyle} value={c.joint_type} onChange={(e) => upd({ joint_type: e.target.value })}>
@@ -106,14 +106,14 @@ export function FluxWeavePanel(): React.ReactElement {
                   <option value="__base__">base_link</option>
                   {parts.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
                 </select>
-                <span style={{ color: "#555" }}>→</span>
+                <span style={{ color: "var(--grey-3)" }}>→</span>
                 <select style={inputStyle} value={c.child_id} title="child" onChange={(e) => upd({ child_id: e.target.value })}>
                   <option value="">(child)</option>
                   {parts.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
                 </select>
                 <button className="chat-send" style={{ padding: "1px 6px", marginLeft: "auto" }} onClick={() => setConns(conns.filter((_, j) => j !== i))}>✕</button>
               </div>
-              <div style={{ display: "flex", gap: 4, alignItems: "center", color: "#777" }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center", color: "var(--grey-3)" }}>
                 {t("fw.axis")} <input style={{ ...inputStyle, width: 70 }} value={vec(c.parent_axis)} onChange={(e) => upd({ parent_axis: parseVec(e.target.value), child_axis: parseVec(e.target.value) })} />
                 {t("fw.atParent")} <input style={{ ...inputStyle, width: 90 }} value={vec(c.parent_local_xyz)} title="parent attach point" onChange={(e) => upd({ parent_local_xyz: parseVec(e.target.value) })} />
                 {t("fw.atChild")} <input style={{ ...inputStyle, width: 90 }} value={vec(c.child_local_xyz)} title="child attach point" onChange={(e) => upd({ child_local_xyz: parseVec(e.target.value) })} />
@@ -125,7 +125,7 @@ export function FluxWeavePanel(): React.ReactElement {
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-        <div style={{ color: "#888", fontWeight: 600 }}>
+        <div style={{ color: "var(--grey-3)", fontWeight: 600 }}>
           {t("fw.urdf")} {assetId && <span style={{ color: "#4caf50" }}>{t("fw.committed")} {assetId}</span>}
         </div>
         <textarea readOnly value={urdf} placeholder={t("fw.urdfPh")}

@@ -3,6 +3,7 @@
 import { app, BrowserWindow, ipcMain, shell, Menu, dialog } from "electron";
 import { autoUpdater } from "electron-updater";
 import * as path from "node:path";
+import * as os from "node:os";
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, unlinkSync, rmSync, renameSync } from "node:fs";
 import { exec } from "node:child_process";
 import { InProcessBus } from "./kernel/bus";
@@ -14,6 +15,11 @@ import { runBuild } from "./build_service";
 import { HilRunner } from "./kernel/hil_runner";
 import { TrainingAgent } from "./kernel/agents/training";
 import { validatePlan, type HilTestPlan } from "./kernel/hil_types";
+import { EventRecorder, trajectoryStats } from "./kernel/recorder";
+import { MissionEngine } from "./kernel/mission";
+import { GoldenPath, commitHilReport, type GoldenPathOpts } from "./kernel/golden_path";
+import { writeEvidenceBundle, listEvidence, getEvidence } from "./kernel/evidence";
+import { BenchRunner } from "./kernel/bench_runner";
 import { OpenOcdAgent } from "./kernel/agents/openocd";
 import { WorkflowRunner, type WorkflowDescriptor } from "./kernel/workflow_runner";
 import { generateKeyPair, signManifest, verifyManifest, parseManifest } from "./kernel/capability";
@@ -40,6 +46,8 @@ const scheduler = new Scheduler();
 const supervisor = new Supervisor();
 let mainWindow: BrowserWindow | null = null;
 let mcpRef: MCPOrchestrator | null = null;
+// Durable capture (P0): evidence bundles and replay read from here.
+const recorder = new EventRecorder(bus);
 
 /** Sentinel triage: error text → structured hypothesis, published as triage.result. */
 async function runTriage(logText: string, source: string, context: Record<string, unknown>): Promise<unknown> {
@@ -60,18 +68,19 @@ async function runTriage(logText: string, source: string, context: Record<string
   }
 }
 
+const MIRROR_TOPICS = [
+  "brain.ready", "device.attached", "device.detached", "alarm.critical",
+  "alarm.cleared", "alarm.policy-violation",
+  "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
+  "agent.event", "run.state", "workflow.published", "cmd.chat", "cmd.set_api",
+  "hil.plan", "hil.step", "hil.report", "triage.result", "sim.state",
+  "training.started", "training.progress", "training.metrics",
+  "training.finished", "training.error", "training.log",
+  "install.progress", "mission.milestone", "term.output",
+];
+
 async function mirrorEventsToRenderer(): Promise<void> {
-  const topics = [
-    "brain.ready", "device.attached", "device.detached", "alarm.critical",
-    "alarm.policy-violation",
-    "openocd.event", "build.progress", "build.diagnostic", "asset.committed",
-    "agent.event", "run.state", "workflow.published", "cmd.chat", "cmd.set_api",
-    "hil.plan", "hil.step", "hil.report", "triage.result", "sim.state",
-    "training.started", "training.progress", "training.metrics",
-    "training.finished", "training.error", "training.log",
-    "install.progress",
-  ];
-  for (const t of topics) {
+  for (const t of MIRROR_TOPICS) {
     await bus.subscribe(t, (e: Event) => {
       mainWindow?.webContents.send("flux:event", e);
     });
@@ -80,6 +89,9 @@ async function mirrorEventsToRenderer(): Promise<void> {
 
 async function bootKernel(): Promise<void> {
   await mirrorEventsToRenderer();
+  // Durable JSONL capture: mirror list + orchestrator internals (cmd.* flow
+  // through openocd.event; mcp.tool.result feeds trajectories + evidence).
+  await recorder.start([...MIRROR_TOPICS, "mcp.tool.result", "mcp.notification"]);
   const { privatePem: priv, publicPem: pub } = generateKeyPair();
   const openocdManifest = parseManifest(JSON.stringify({
     identity: { name: "openocd-task", tier: "c", version: "0.1.0" },
@@ -172,6 +184,7 @@ async function bootKernel(): Promise<void> {
   ipcMain.handle("flux:trainStart", async (_evt, spec: Record<string, unknown>) => training.start(spec));
   ipcMain.handle("flux:trainCancel", async (_evt, runId: string) => training.cancel(runId));
   ipcMain.handle("flux:trainList", async () => training.list());
+  ipcMain.handle("flux:trainResume", async (_evt, runId: string) => training.resume(runId));
 
   mcpRef = mcp;
   ipcMain.handle("flux:triage", async (_evt, logText: string, context?: Record<string, unknown>) =>
@@ -180,26 +193,12 @@ async function bootKernel(): Promise<void> {
   // ── HIL runner (asset-driven plans, mock|real|sim DeviceBackend) ──
   const hil = new HilRunner(bus, (sampleDir) => runBuild(sampleDir, bus));
   ipcMain.handle("flux:hilRun", async (_evt, plan: HilTestPlan) => {
+    const t0 = Date.now();
     const report = await hil.run(plan);
     // Flywheel write-back: the report itself becomes a devready asset.
-    try {
-      const text = await mcp.callTool("commit_asset", {
-        // background band: report write-back never blocks interactive calls
-        asset_id: `hilreport-${report.runId}`,
-        type: "hil-report",
-        source: { kind: "hil-run", board: report.board, mode: report.mode },
-        components: [report.board, report.planName],
-        characterization: { summary: report.summary, goal: report.goal, steps: report.steps },
-      }, 10);
-      void text;
-      await bus.publish({
-        source: "hil-runner", kind: "execute", topic: "asset.committed",
-        data: { asset_id: `hilreport-${report.runId}`, type: "hil-report" },
-        trace_id: report.runId,
-      });
-    } catch (e) {
-      console.warn("[hil] report asset commit failed:", (e as Error).message);
-    }
+    await commitHilReport(mcp, bus, report);
+    // Evidence bundle: replayable, hash-chained — the unfakeable-demo layer.
+    void writeEvidenceBundle(recorder, mcp, bus, plan, report, t0);
     // Behavior-level triage: flash/build green but asserts red → why?
     if (report.summary.verdict === "FAIL") {
       const failures = report.steps
@@ -213,6 +212,50 @@ async function bootKernel(): Promise<void> {
       );
     }
     return report;
+  });
+
+  // ── Mission engine + golden path (P1): plug in → identify → ingest → plan →
+  // verify → commit. One mission = one point on the dashboard curve.
+  const missions = new MissionEngine(bus);
+  const goldenPath = new GoldenPath(bus, mcp, hil, missions,
+    path.join(repoRoot(), "examples", "hil", "gpio_smoke.json"), runTriage,
+    (plan, report, t0) => writeEvidenceBundle(recorder, mcp, bus, plan, report, t0).then(() => void 0));
+  ipcMain.handle("flux:missionStart", async (_evt, goal: string, opts?: GoldenPathOpts) =>
+    goldenPath.run(goal, opts ?? {}));
+  ipcMain.handle("flux:missionList", async () => missions.list());
+  ipcMain.handle("flux:trajectoryStats", async () => trajectoryStats());
+  ipcMain.handle("flux:evidenceList", async () => listEvidence());
+  ipcMain.handle("flux:evidenceGet", async (_evt, runId: string) => getEvidence(runId));
+
+  // ── PhysicalDevBench (P4): frontier models × bare/with_assets scoreboard ──
+  const bench = new BenchRunner(bus, mcp, hil, path.join(repoRoot(), "benchmarks"));
+  ipcMain.handle("flux:benchRun", async (_evt, taskIds?: string[], presets?: string[]) =>
+    bench.run(taskIds, presets));
+  ipcMain.handle("flux:benchTasks", async () => bench.listTasks());
+
+  // ── Alarm preemption (P5 拔线): alarm.critical freezes every queued call
+  // below the Device band until the operator clears it — "硬件不等人" made visible.
+  await bus.subscribe("alarm.critical", async (e: Event) => {
+    mcp.pauseBelow(70);
+    await bus.publish({
+      source: "kernel", kind: "log", topic: "agent.event",
+      data: { step: "alarm", note: `preempted: tool calls below Device(70) held (${JSON.stringify(e.data).slice(0, 120)})` },
+      trace_id: e.trace_id,
+    });
+  });
+  await bus.subscribe("alarm.cleared", async () => mcp.resume());
+  ipcMain.handle("flux:alarmDemo", async () => {
+    await bus.publish({
+      source: "physical", kind: "error", topic: "alarm.critical",
+      data: { source: "physical", code: "probe-loss", message: "debug probe disconnected (拔线 demo)" },
+      trace_id: `alarm-${Date.now()}`,
+    });
+  });
+  ipcMain.handle("flux:alarmClear", async () => {
+    await bus.publish({
+      source: "kernel", kind: "execute", topic: "alarm.cleared",
+      data: { note: "operator resume" }, trace_id: `alarm-${Date.now()}`,
+    });
   });
 
   ipcMain.handle("flux:hilGenerate", async (_evt, goal: string, opts?: { chip?: string; board?: string; backend?: string }) => {
@@ -236,6 +279,14 @@ async function bootKernel(): Promise<void> {
   ipcMain.handle("flux:mcpCall", async (_evt, tool: string, args: Record<string, unknown>) => {
     const result = await mcp.callTool(tool, args ?? {});
     const text = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text ?? "";
+    if (tool === "dream" || tool === "set_workspace") {
+      // Both change what the asset panel should show — nudge a refresh.
+      await bus.publish({
+        source: "flux-insight", kind: "execute", topic: "asset.committed",
+        data: { asset_id: tool, type: tool === "dream" ? "dream-report" : "workspace" },
+        trace_id: `${tool}-${Date.now()}`,
+      });
+    }
     if (tool === "commit_asset" || tool.startsWith("ingest_")) {
       try {
         const parsed = JSON.parse(text) as { asset_id?: string; type?: string; components?: string[] };
@@ -252,20 +303,86 @@ async function bootKernel(): Promise<void> {
   });
 
   const ocd = new OpenOcdAgent(bus);
-  if (process.env["FLUX_OPENOCD_REAL"] === "1") {
-    const ocdBin = process.env["FLUX_OPENOCD_BIN"] ?? "/tmp/hpm-openocd/src/openocd";
-    const ocdCfg = process.env["FLUX_OPENOCD_CFG"]
-      ?? "/home/exuber/hpm_sdk/boards/openocd/hpm6e00_all_in_one.cfg";
-    const sdkBase = process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk";
-    await ocd.startReal(ocdBin, ocdCfg, sdkBase)
-      .then(() => console.log("[kernel] OpenOCD real mode: HPM6E00 connected"))
-      .catch((e) => {
-        console.error("[kernel] OpenOCD real failed, mock fallback:", e.message);
-        void ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch(() => void 0);
+  await ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd]", e.message));
+
+  // ── Board profiles + real-probe bring-up, driven from skills/boards.json ──
+  // Everything Claude Code did by hand (detect / authorize / connect) is now
+  // a studio IPC — see board-bringup skill.
+  const expandHome = (p: string): string => p.startsWith("~") ? path.join(os.homedir(), p.slice(1)) : p;
+  const loadBoards = (): Array<Record<string, any>> => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    try { return JSON.parse(readFileSync(path.join(repoRoot(), "skills", "boards.json"), "utf8")).boards ?? []; }
+    catch { return []; }
+  };
+  ipcMain.handle("flux:boards", async () => loadBoards());
+
+  // Detect: which board profiles match a currently-plugged debugger, and is
+  // the USB node writable (else authorization is needed).
+  ipcMain.handle("flux:deviceStatus", async () => {
+    const lsusb: string = await new Promise((res) => exec("lsusb", (_e, o) => res(o ?? "")));
+    return loadBoards().map((b) => {
+      const vid = b["usb"]?.vid, pid = b["usb"]?.pid;
+      const re = new RegExp(`ID\\s+${vid}:${pid}`, "i");
+      const present = re.test(lsusb);
+      return { id: b["id"], name: b["name"], chip: b["chip"], vid, pid, present };
+    });
+  });
+
+  // Authorize: install a udev rule via pkexec (graphical password prompt), so
+  // the debugger node becomes 0666 — entirely inside the studio, no terminal.
+  // pkexec needs the desktop session's DISPLAY/DBUS to reach the GNOME/KDE
+  // polkit agent; we pass them explicitly so it works even when the studio was
+  // launched from the .desktop entry.
+  ipcMain.handle("flux:authorizeUsb", async (_evt, vid: string, pid: string) => {
+    if (!/^[0-9a-fA-F]{4}$/.test(vid) || !/^[0-9a-fA-F]{4}$/.test(pid)) {
+      return { ok: false, error: "bad vid/pid" };
+    }
+    const pkexecPath = await new Promise<string>((r) => exec("command -v pkexec", (_e, o) => r((o ?? "").trim())));
+    if (!pkexecPath) {
+      return { ok: false, error: "pkexec not found — install policykit-1 (sudo apt install policykit-1)" };
+    }
+    const rule = `SUBSYSTEM=="usb", ATTRS{idVendor}=="${vid}", ATTRS{idProduct}=="${pid}", MODE="0666", TAG+="uaccess"`;
+    const rulePath = `/etc/udev/rules.d/99-flux-${vid}-${pid}.rules`;
+    // Also chmod any already-enumerated node so the current session works
+    // without replug; udevadm trigger re-applies the rule to plugged devices.
+    const script = `printf '%s\\n' '${rule}' > ${rulePath} && udevadm control --reload-rules && udevadm trigger --subsystem-match=usb`;
+    const env: Record<string, string> = { ...process.env } as Record<string, string>;
+    // Ensure the polkit agent is reachable from a desktop-entry launch.
+    if (!env["DISPLAY"] && process.env["DISPLAY"]) env["DISPLAY"] = process.env["DISPLAY"];
+    if (!env["XDG_RUNTIME_DIR"]) env["XDG_RUNTIME_DIR"] = `/run/user/${process.getuid?.() ?? 1000}`;
+    return new Promise((res) => {
+      exec(`pkexec bash -c ${JSON.stringify(script)}`, { env }, (err, _o, stderr) => {
+        if (err) {
+          const msg = (stderr || err.message).trim();
+          // pkexec exit 126 = user dismissed / not authorized; 127 = agent missing.
+          const friendly = /dismiss|Authentication failed|not authorized|126/.test(msg)
+            ? "authorization cancelled or denied"
+            : /agent|127/.test(msg) ? "no polkit agent — is a desktop session active?"
+            : msg.slice(0, 200);
+          res({ ok: false, error: friendly });
+          return;
+        }
+        res({ ok: true, rulePath });
       });
-  } else {
-    await ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch((e) => console.error("[openocd]", e.message));
-  }
+    });
+  });
+
+  // Connect: start real OpenOCD for a board profile (probe → physical subagent
+  // switches from mock to real). Falls back to mock on failure.
+  ipcMain.handle("flux:probeConnect", async (_evt, boardId: string) => {
+    const b = loadBoards().find((x) => x["id"] === boardId);
+    if (!b) return { ok: false, error: `unknown board: ${boardId}` };
+    const oc = b["openocd"] ?? {};
+    const bin = expandHome(oc.bin ?? "openocd");
+    const search = oc.search ? expandHome(oc.search) : "";
+    const sdk = b["build"]?.sdk_path ? expandHome(b["build"].sdk_path) : "";
+    try {
+      await ocd.startReal(bin, oc.cfgs ?? [], search, sdk, b["chip"] ?? "device");
+      return { ok: true, chip: b["chip"] };
+    } catch (e) {
+      void ocd.startMock(OPENOCD_CMD, OPENOCD_ARGS).catch(() => void 0);
+      return { ok: false, error: (e as Error).message.slice(0, 200) };
+    }
+  });
 
   const runner = new WorkflowRunner(bus);
   await bus.subscribe("workflow.published", (e: Event) => {
@@ -274,18 +391,60 @@ async function bootKernel(): Promise<void> {
   });
   void scheduler;
 
-  let alarmDemoed = false;
-  await bus.subscribe("asset.committed", async () => {
-    if (alarmDemoed) return;
-    alarmDemoed = true;
-    setTimeout(async () => {
-      await bus.publish({
-        source: "kernel", kind: "execute", topic: "alarm.critical",
-        data: { source: "kernel", code: "test-alarm", message: "priority preempt demo" },
-        trace_id: "alarm-demo",
-      });
-    }, 2000);
+  // (The old auto-fired alarm demo is gone: alarm.critical now really preempts
+  // the tool queue, so it must only fire on operator action — flux:alarmDemo.)
+
+  // ── Bottom terminal (VSCode-style drawer): one-shot commands, output
+  // streamed as term.output events. Not a pty — a command runner.
+  ipcMain.handle("flux:termRun", async (_evt, cmd: string, cwd?: string, envBin?: string) => {
+    const { spawn: spawnCmd } = require("node:child_process") as typeof import("node:child_process");
+    const emit = (line: string, kind: string): void => {
+      void bus.publish({ source: "terminal", kind: "log", topic: "term.output",
+        data: { line, kind }, trace_id: `term-${Date.now()}` });
+    };
+    emit(`$ ${cmd}`, "cmd");
+    const dir = cwd && existsSync(cwd) ? cwd : repoRoot();
+    // Workspace conda env: prepend its bin so python/pip resolve inside it.
+    const envPath = envBin && existsSync(envBin)
+      ? `${envBin}:${process.env["PATH"] ?? ""}` : process.env["PATH"];
+    const proc = spawnCmd("bash", ["-lc", cmd], { cwd: dir, env: { ...process.env, PATH: envPath ?? "" } });
+    let emitted = 0;
+    const MAX_LINES = 400;
+    const pump = (kind: string) => {
+      let buf = "";
+      return (chunk: Buffer | string): void => {
+        buf += chunk.toString();
+        let i: number;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const l = buf.slice(0, i); buf = buf.slice(i + 1);
+          if (emitted === MAX_LINES) { emit(`… output truncated at ${MAX_LINES} lines`, "meta"); }
+          if (emitted++ < MAX_LINES) emit(l, kind);
+        }
+      };
+    };
+    proc.stdout?.on("data", pump("out"));
+    proc.stderr?.on("data", pump("err"));
+    proc.on("exit", (code) => emit(`[exit ${code}]`, "meta"));
+    proc.on("error", (e) => emit(`spawn error: ${e.message}`, "err"));
+    return true;
   });
+
+  // ── Dream (P6): nightly memory consolidation on the Background band.
+  // First pass 10 minutes after boot, then every 24 h.
+  const runDream = async (): Promise<void> => {
+    try {
+      await mcp.callTool("dream", {}, 10);
+      await bus.publish({
+        source: "dream", kind: "execute", topic: "asset.committed",
+        data: { asset_id: "dream-report", type: "dream-report" },
+        trace_id: `dream-${Date.now()}`,
+      });
+    } catch (e) { console.warn("[dream]", (e as Error).message); }
+  };
+  setTimeout(() => {
+    void runDream();
+    setInterval(() => void runDream(), 24 * 3600 * 1000);
+  }, 10 * 60 * 1000);
 }
 
 function buildMenu(): Menu {
@@ -305,7 +464,9 @@ function buildMenu(): Menu {
       { label: "Toggle DevTools", accelerator: "F12", role: "toggleDevTools" },
     ]},
     { label: "Terminal", submenu: [
-      { label: "New Terminal", click: () => console.log("[menu] terminal (TODO)") },
+      { label: "New Terminal", accelerator: "Ctrl+`", click: () => {
+        mainWindow?.webContents.send("flux:openTerminal");
+      }},
     ]},
     { label: "Help", submenu: [
       { label: "Architecture Plan (Wiki)", click: () => {
@@ -385,20 +546,43 @@ ipcMain.handle("flux:openFolder", async () => {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
   return result.canceled ? null : result.filePaths[0] ?? null;
 });
+ipcMain.handle("flux:openFile", async (_evt, filters?: Array<{ name: string; extensions: string[] }>) => {
+  const result = await dialog.showOpenDialog({ properties: ["openFile"], filters });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
 
 ipcMain.handle("flux:condaList", async () => {
-  return new Promise((resolve) => {
-    exec("conda env list --json", (err, stdout) => {
+  // Desktop-entry launches have a clean PATH (no conda) — resolve the binary
+  // from common install locations, and fall back to scanning envs/ dirs.
+  const os = require("node:os") as typeof import("node:os");
+  const home = os.homedir();
+  const condaBins = ["conda",
+    path.join(home, "miniconda3", "bin", "conda"),
+    path.join(home, "anaconda3", "bin", "conda"),
+    path.join(home, "miniforge3", "bin", "conda"),
+    "/opt/conda/bin/conda"];
+  const condaBin = condaBins.find((c) => c === "conda" ? false : existsSync(c)) ?? "conda";
+  const viaCli = await new Promise<Array<{ name: string; path: string }>>((resolve) => {
+    exec(`${condaBin} env list --json`, (err, stdout) => {
       if (err) { resolve([]); return; }
       try {
         const data = JSON.parse(stdout);
-        resolve((data.envs || []).map((p: string) => ({
-          name: p.split("/").pop() || "base",
-          path: p,
-        })));
+        resolve((data.envs || []).map((p: string) => ({ name: p.split("/").pop() || "base", path: p })));
       } catch { resolve([]); }
     });
   });
+  if (viaCli.length) return viaCli;
+  // No conda CLI reachable — enumerate env directories directly.
+  const found: Array<{ name: string; path: string }> = [];
+  for (const root of ["miniconda3", "anaconda3", "miniforge3"].map((d) => path.join(home, d))) {
+    if (!existsSync(root)) continue;
+    found.push({ name: "base", path: root });
+    const envs = path.join(root, "envs");
+    if (existsSync(envs)) {
+      for (const e of readdirSync(envs)) found.push({ name: e, path: path.join(envs, e) });
+    }
+  }
+  return found;
 });
 
 ipcMain.handle("flux:listAssets", async () => {

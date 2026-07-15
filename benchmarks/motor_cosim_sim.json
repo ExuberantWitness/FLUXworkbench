@@ -1,0 +1,10 @@
+{
+  "schema": "flux.bench.task/v1",
+  "id": "motor_cosim_sim",
+  "description": "Multi-domain co-sim assert: PID firmware duty register AND Newton motor velocity must both settle. The hardest task — electronic + physical domain in one plan. Requires Renode + the motor_pid firmware ELF.",
+  "goal": "Flash firmware/motor_pid/motor_pid.elf, wait for the control loop to settle, then verify the TIM1 CCR1 duty register is in range [600,1000] and the simulated motor velocity settles near 12 rad/s",
+  "chip": "STM32F103xx",
+  "board": "stm32f103-bluepill",
+  "backend": "sim",
+  "conditions": ["bare", "with_assets"]
+}

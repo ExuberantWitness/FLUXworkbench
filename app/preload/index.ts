@@ -35,6 +35,9 @@ const api = {
   sendSetApi(config: Record<string, string>): Promise<void> {
     return ipcRenderer.invoke("flux:setApi", config);
   },
+  mcpTools(): Promise<Array<{ name: string; description: string; server: string }>> {
+    return ipcRenderer.invoke("flux:mcpTools");
+  },
   // ── file system ──
   readDir(path: string): Promise<DirEntry[]> {
     return ipcRenderer.invoke("flux:readDir", path);
@@ -60,6 +63,9 @@ const api = {
   openFolder(): Promise<string | null> {
     return ipcRenderer.invoke("flux:openFolder");
   },
+  openFile(filters?: Array<{ name: string; extensions: string[] }>): Promise<string | null> {
+    return ipcRenderer.invoke("flux:openFile", filters);
+  },
   // ── build (cross-compile: hpm cmake | zephyr west) ──
   build(sampleDir: string, opts?: { toolchain?: "hpm" | "zephyr"; board?: string; pristine?: boolean }): Promise<{ ok: boolean; elf?: string; dts?: string; error?: string; log?: string }> {
     return ipcRenderer.invoke("flux:build", sampleDir, opts);
@@ -71,6 +77,37 @@ const api = {
   // ── generic MCP tool call (asset flywheel entry point) ──
   mcpCall(tool: string, args: Record<string, unknown>): Promise<string> {
     return ipcRenderer.invoke("flux:mcpCall", tool, args);
+  },
+  // ── Golden path missions (plug in → identify → ingest → plan → verify → commit) ──
+  missionStart(goal: string, opts?: { chip?: string; board?: string; backend?: string; svdPath?: string; pinmuxPath?: string }): Promise<{ missionId: string; record?: unknown; report?: unknown; planGenerated?: boolean; error?: string }> {
+    return ipcRenderer.invoke("flux:missionStart", goal, opts);
+  },
+  missionList(): Promise<Array<Record<string, unknown>>> {
+    return ipcRenderer.invoke("flux:missionList");
+  },
+  trajectoryStats(): Promise<{ missions: number; lines: number }> {
+    return ipcRenderer.invoke("flux:trajectoryStats");
+  },
+  // ── evidence bundles (replayable, hash-chained HIL runs) ──
+  evidenceList(): Promise<Array<{ runId: string; verdict: string; createdAt: number; content_hash: string }>> {
+    return ipcRenderer.invoke("flux:evidenceList");
+  },
+  evidenceGet(runId: string): Promise<unknown | null> {
+    return ipcRenderer.invoke("flux:evidenceGet", runId);
+  },
+  // ── alarm preemption demo (拔线) ──
+  alarmDemo(): Promise<void> {
+    return ipcRenderer.invoke("flux:alarmDemo");
+  },
+  alarmClear(): Promise<void> {
+    return ipcRenderer.invoke("flux:alarmClear");
+  },
+  // ── PhysicalDevBench ──
+  benchRun(taskIds?: string[], presets?: string[]): Promise<Array<Record<string, unknown>>> {
+    return ipcRenderer.invoke("flux:benchRun", taskIds, presets);
+  },
+  benchTasks(): Promise<Array<Record<string, unknown>>> {
+    return ipcRenderer.invoke("flux:benchTasks");
   },
   // ── HIL (asset-driven test plans on mock|real|sim backends) ──
   hilGenerate(goal: string, opts?: { chip?: string; board?: string; backend?: string }): Promise<{ plan: unknown; generated: boolean; error?: string }> {
@@ -89,8 +126,11 @@ const api = {
   trainCancel(runId: string): Promise<boolean> {
     return ipcRenderer.invoke("flux:trainCancel", runId);
   },
-  trainList(): Promise<Array<{ runId: string; startedAt: number }>> {
+  trainList(): Promise<Array<{ runId: string; startedAt: number; status: string; live: boolean; resumable: boolean; resumes: number }>> {
     return ipcRenderer.invoke("flux:trainList");
+  },
+  trainResume(runId: string): Promise<string | null> {
+    return ipcRenderer.invoke("flux:trainResume", runId);
   },
   // ── Isaac Sim 6 ──
   gpuInfo(): Promise<{ present: boolean; name?: string; driver?: string; vram?: string; driverOk?: boolean }> {
@@ -102,12 +142,34 @@ const api = {
   isaacCancel(): Promise<boolean> {
     return ipcRenderer.invoke("flux:isaacCancel");
   },
+  // ── boards / real-probe bring-up ──
+  boards(): Promise<Array<Record<string, unknown>>> {
+    return ipcRenderer.invoke("flux:boards");
+  },
+  deviceStatus(): Promise<Array<{ id: string; name: string; chip: string; vid: string; pid: string; present: boolean }>> {
+    return ipcRenderer.invoke("flux:deviceStatus");
+  },
+  authorizeUsb(vid: string, pid: string): Promise<{ ok: boolean; error?: string; rulePath?: string }> {
+    return ipcRenderer.invoke("flux:authorizeUsb", vid, pid);
+  },
+  probeConnect(boardId: string): Promise<{ ok: boolean; chip?: string; error?: string }> {
+    return ipcRenderer.invoke("flux:probeConnect", boardId);
+  },
   // ── conda ──
   condaList(): Promise<CondaEnv[]> {
     return ipcRenderer.invoke("flux:condaList");
   },
   condaCreate(name: string): Promise<void> {
     return ipcRenderer.invoke("flux:condaCreate", name);
+  },
+  // ── bottom terminal ──
+  termRun(cmd: string, cwd?: string, envBin?: string): Promise<boolean> {
+    return ipcRenderer.invoke("flux:termRun", cmd, cwd, envBin);
+  },
+  onOpenTerminal(cb: () => void): () => void {
+    const handler = (): void => cb();
+    ipcRenderer.on("flux:openTerminal", handler);
+    return () => ipcRenderer.off("flux:openTerminal", handler);
   },
   // ── misc ──
   status(): Promise<unknown> {

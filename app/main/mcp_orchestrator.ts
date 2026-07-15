@@ -108,21 +108,41 @@ export class MCPOrchestrator {
   private readonly maxConcurrent = 2;
   private waitq: Array<{ prio: number; seq: number; run: () => void }> = [];
   private dispatchSeq = 0;
+  // Alarm preemption (拔线): while paused, queued calls below the floor stay queued.
+  private pauseFloor = 0;
 
   private acquire(prio: number): Promise<void> {
-    if (this.inflight < this.maxConcurrent) {
+    if (prio >= this.pauseFloor && this.inflight < this.maxConcurrent) {
       this.inflight++;
       return Promise.resolve();
     }
     return new Promise((resolve) => {
       this.waitq.push({ prio, seq: this.dispatchSeq++, run: () => { this.inflight++; resolve(); } });
       this.waitq.sort((a, b) => b.prio - a.prio || a.seq - b.seq);
+      this.drain();
     });
   }
 
   private releaseSlot(): void {
     this.inflight--;
-    this.waitq.shift()?.run();
+    this.drain();
+  }
+
+  private drain(): void {
+    while (this.inflight < this.maxConcurrent && this.waitq.length > 0
+           && this.waitq[0]!.prio >= this.pauseFloor) {
+      this.waitq.shift()!.run();
+    }
+  }
+
+  /** Alarm preemption: hold every queued call below `priority` until resume(). */
+  pauseBelow(priority: number): void {
+    this.pauseFloor = priority;
+  }
+
+  resume(): void {
+    this.pauseFloor = 0;
+    this.drain();
   }
 
   /** Call a tool by name. Routes to the owning server via the priority queue. */
@@ -134,6 +154,7 @@ export class MCPOrchestrator {
 
     // LLM/vision tool calls can run for minutes — far past the 30s handshake timeout.
     await this.acquire(priority);
+    const t0 = Date.now();
     let result: unknown;
     try {
       result = await this.send(tool.server, "tools/call", {
@@ -144,12 +165,13 @@ export class MCPOrchestrator {
       this.releaseSlot();
     }
 
-    // Publish result as uORB event for UI
+    // Publish result as uORB event for UI + recorder (durationMs/priority feed
+    // the trajectory factory and the flywheel dashboard).
     const event: Event = {
       source: `mcp:${tool.server}`,
       kind: "execute",
       topic: `mcp.tool.result`,
-      data: { tool: toolName, args, result },
+      data: { tool: toolName, args, result, durationMs: Date.now() - t0, priority },
       trace_id: randomUUID(),
     };
     await this.bus.publish(event);

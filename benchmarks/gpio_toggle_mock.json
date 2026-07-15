@@ -1,0 +1,10 @@
+{
+  "schema": "flux.bench.task/v1",
+  "id": "gpio_toggle_mock",
+  "description": "GPIO output toggle + chip identity — the bread-and-butter bring-up check. Bare models must recall STM32F103 GPIOC/IDCODE addresses from memory; with assets they read the register-map slice.",
+  "goal": "Verify the flashed firmware toggles the PC13 LED output over time and the chip identity register reads as an STM32F103 (IDCODE low bits 0x410)",
+  "chip": "STM32F103xx",
+  "board": "stm32f103-bluepill",
+  "backend": "mock",
+  "conditions": ["bare", "with_assets"]
+}

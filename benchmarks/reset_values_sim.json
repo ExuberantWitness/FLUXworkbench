@@ -1,0 +1,10 @@
+{
+  "schema": "flux.bench.task/v1",
+  "id": "reset_values_sim",
+  "description": "Boot-state reset-value check on the asset-generated Renode platform. Requires the sim backend (renode --disable-gui --port 3456). Reset values are exactly the kind of detail bare models hallucinate.",
+  "goal": "Without flashing any firmware, verify the reset values of the RCC control register (HSION set) and GPIOC configuration register match the STM32F103 datasheet reset state",
+  "chip": "STM32F103xx",
+  "board": "stm32f103-bluepill",
+  "backend": "sim",
+  "conditions": ["bare", "with_assets"]
+}

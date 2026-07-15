@@ -1,0 +1,174 @@
+{
+  "schema": "flux.boards/v1",
+  "comment": "Board profiles drive device detection, USB authorization, real-probe connect, build and pinmux ingestion. Add a board = add an entry.",
+  "boards": [
+    {
+      "id": "hpm6e00evk",
+      "name": "HPMicro HPM6E00EVK",
+      "chip": "HPM6E80",
+      "arch": "riscv32",
+      "usb": {
+        "vid": "0403",
+        "pid": "6010",
+        "label": "FT2232 on-board debugger"
+      },
+      "uart": {
+        "dev_hint": "/dev/ttyUSB1",
+        "baud": 115200
+      },
+      "openocd": {
+        "bin": "~/tools/hpm-openocd/bin/openocd",
+        "search": "~/hpm_sdk/boards/openocd",
+        "cfgs": [
+          "probes/ft2232.cfg",
+          "soc/hpm6e80-single-core.cfg",
+          "boards/hpm6e00evk.cfg"
+        ],
+        "tap_id": "0x1000563D",
+        "flash_driver": "hpm_xpi (hpmicro fork only)"
+      },
+      "build": {
+        "toolchain_env": "GNURISCV_TOOLCHAIN_PATH",
+        "toolchain_glob": "~/toolchains/*riscv*",
+        "sdk_env": "HPM_SDK_BASE",
+        "sdk_path": "~/hpm_sdk",
+        "board_arg": "hpm6e00evk",
+        "sample": "~/hpm_sdk/samples/hello_world"
+      },
+      "pinmux": "~/hpm_sdk/boards/hpm6e00evk/pinmux.c",
+      "provision_hint": "toolchain: github.com/hpmicro/riscv-gnu-toolchain releases; openocd: build hpmicro/riscv-openocd (needs jimtcl submodule + --enable-internal-jimtcl)",
+      "references": [
+        {
+          "title": "HPM6E00EVK Board README (hpm-sdk docs)",
+          "url": "https://hpm-sdk.readthedocs.io/en/v1.6.0/boards/hpm6e00evk/README_en.html"
+        },
+        {
+          "title": "HPM SDK documentation (latest)",
+          "url": "https://hpm-sdk.readthedocs.io/en/latest/"
+        },
+        {
+          "title": "hpm_sdk GitHub",
+          "url": "https://github.com/hpmicro/hpm_sdk"
+        },
+        {
+          "title": "HPMicro riscv-openocd (flash driver hpm_xpi)",
+          "url": "https://github.com/hpmicro/riscv-openocd"
+        },
+        {
+          "title": "HPMicro riscv-gnu-toolchain releases",
+          "url": "https://github.com/hpmicro/riscv-gnu-toolchain/releases"
+        }
+      ],
+      "geometry": {
+        "usd_ref": null,
+        "model_ref": null,
+        "dimensions_mm": null,
+        "mounting": null,
+        "note": "USD shell slot — attach board 3D model / bracket & mounting dims via FluxWeave (fw_generate_urdf) or vendor STEP when available"
+      }
+    },
+    {
+      "id": "hpm5300evk",
+      "name": "HPMicro HPM5300EVK",
+      "chip": "HPM5361",
+      "arch": "riscv32",
+      "usb": {
+        "vid": "0403",
+        "pid": "6010",
+        "label": "FT2232 on-board debugger"
+      },
+      "uart": {
+        "dev_hint": "/dev/ttyUSB1",
+        "baud": 115200
+      },
+      "openocd": {
+        "bin": "~/tools/hpm-openocd/bin/openocd",
+        "search": "~/hpm_sdk/boards/openocd",
+        "cfgs": [
+          "probes/ft2232.cfg",
+          "soc/hpm5300.cfg",
+          "boards/hpm5300evk.cfg"
+        ],
+        "flash_driver": "hpm_xpi"
+      },
+      "build": {
+        "toolchain_env": "GNURISCV_TOOLCHAIN_PATH",
+        "toolchain_glob": "~/toolchains/*riscv*",
+        "sdk_env": "HPM_SDK_BASE",
+        "sdk_path": "~/hpm_sdk",
+        "board_arg": "hpm5300evk",
+        "sample": "~/hpm_sdk/samples/hello_world"
+      },
+      "pinmux": "~/hpm_sdk/boards/hpm5300evk/pinmux.c",
+      "references": [
+        {
+          "title": "HPM5300EVK Board README (hpm-sdk docs)",
+          "url": "https://hpm-sdk.readthedocs.io/en/latest/boards/hpm5300evk/README_en.html"
+        },
+        {
+          "title": "hpm_sdk GitHub",
+          "url": "https://github.com/hpmicro/hpm_sdk"
+        }
+      ],
+      "geometry": {
+        "usd_ref": null,
+        "model_ref": null,
+        "dimensions_mm": null,
+        "mounting": null,
+        "note": "USD shell slot — attach when measured"
+      }
+    },
+    {
+      "id": "stm32f103-bluepill",
+      "name": "STM32F103 BluePill (ST-Link)",
+      "chip": "STM32F103xx",
+      "arch": "arm-cm3",
+      "usb": {
+        "vid": "0483",
+        "pid": "3748",
+        "label": "ST-Link/V2"
+      },
+      "uart": {
+        "dev_hint": "/dev/ttyUSB0",
+        "baud": 115200
+      },
+      "openocd": {
+        "bin": "openocd",
+        "search": "",
+        "cfgs": [
+          "interface/stlink.cfg",
+          "target/stm32f1x.cfg"
+        ],
+        "tap_id": "0x1ba01477",
+        "flash_driver": "stm32f1x (upstream)"
+      },
+      "build": {
+        "toolchain_env": "GNUARMEMB_TOOLCHAIN_PATH",
+        "toolchain_glob": "~/toolchains/*arm-none-eabi*",
+        "sample": "firmware/motor_pid"
+      },
+      "svd": "STM32F103xx (ingest_svd)",
+      "references": [
+        {
+          "title": "STM32F103 Reference Manual RM0008",
+          "url": "https://www.st.com/resource/en/reference_manual/rm0008-stm32f101xx-stm32f102xx-stm32f103xx-stm32f105xx-and-stm32f107xx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf"
+        },
+        {
+          "title": "Blue Pill pinout (STM32-base)",
+          "url": "https://stm32-base.org/boards/STM32F103C8T6-Blue-Pill.html"
+        }
+      ],
+      "geometry": {
+        "usd_ref": null,
+        "model_ref": null,
+        "dimensions_mm": [
+          53,
+          22.5,
+          null
+        ],
+        "mounting": "2x pin headers 20-pin",
+        "note": "Blue Pill standard outline 53x22.5mm (community-documented)"
+      }
+    }
+  ]
+}

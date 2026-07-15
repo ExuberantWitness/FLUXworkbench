@@ -39,8 +39,9 @@ export function ProblemsPanel({ events, openFile }: {
   return (
     <div style={{ display: "flex", gap: 10, padding: 8, height: "100%", overflow: "hidden", fontSize: 11 }}>
       <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
-        <div style={{ color: "#888", marginBottom: 4, fontWeight: 600 }}>{t("prob.diagHead")} ({diags.length})</div>
-        {diags.length === 0 && <div style={{ color: "#555" }}>{t("prob.noDiag")}</div>}
+        <div style={{ color: "var(--grey-3)", marginBottom: 2, fontWeight: 600 }}>{t("prob.diagHead")} ({diags.length})</div>
+        <div style={{ color: "var(--grey-3)", fontSize: 10, marginBottom: 4, opacity: 0.8 }}>{t("prob.diagHint")}</div>
+        {diags.length === 0 && <div style={{ color: "var(--grey-3)" }}>{t("prob.noDiag")}</div>}
         {diags.map((d, i) => (
           <div key={i} onClick={() => d.file && openFile?.(d.file)}
             style={{ cursor: d.file ? "pointer" : "default", fontFamily: "var(--mono, monospace)", padding: "2px 0",
@@ -50,13 +51,14 @@ export function ProblemsPanel({ events, openFile }: {
         ))}
       </div>
       <div style={{ flex: 1.2, overflow: "auto", minWidth: 0 }}>
-        <div style={{ color: "#888", marginBottom: 4, fontWeight: 600 }}>{t("prob.sentinel")}</div>
-        {triages.length === 0 && <div style={{ color: "#555" }}>{t("prob.noTriage")}</div>}
+        <div style={{ color: "var(--grey-3)", marginBottom: 2, fontWeight: 600 }}>{t("prob.sentinel")}</div>
+        <div style={{ color: "var(--grey-3)", fontSize: 10, marginBottom: 4, opacity: 0.8 }}>{t("prob.sentinelHint")}</div>
+        {triages.length === 0 && <div style={{ color: "var(--grey-3)" }}>{t("prob.noTriage")}</div>}
         {triages.map((tr, i) => (
           <div key={i} className="rp-card" style={{ marginBottom: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontWeight: 700, color: "#ff9800" }}>{tr.category}</span>
-              <span style={{ color: "#666" }}>{tr.source}</span>
+              <span style={{ color: "var(--grey-3)" }}>{tr.source}</span>
               <div style={{ marginLeft: "auto", width: 60, height: 5, background: "#333", borderRadius: 3 }}>
                 <div style={{ width: `${Math.round((tr.confidence ?? 0) * 60)}px`, height: 5, background: (tr.confidence ?? 0) > 0.6 ? "#4caf50" : "#ff9800", borderRadius: 3 }} />
               </div>
@@ -70,15 +72,15 @@ export function ProblemsPanel({ events, openFile }: {
             {tr.suggested_fixes?.map((f, j) => (
               <div key={j} style={{ color: "#a5d6a7", marginTop: 2 }}>💡 {f.title}{f.detail ? ` — ${f.detail}` : ""}</div>
             ))}
-            {tr.asset_id && <div style={{ color: "#555", marginTop: 2 }}>case → {tr.asset_id}</div>}
+            {tr.asset_id && <div style={{ color: "var(--grey-3)", marginTop: 2 }}>case → {tr.asset_id}</div>}
           </div>
         ))}
       </div>
       <div style={{ width: 260, display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ color: "#888", fontWeight: 600 }}>{t("prob.manual")}</div>
+        <div style={{ color: "var(--grey-3)", fontWeight: 600 }}>{t("prob.manual")}</div>
         <textarea value={pasted} onChange={(e) => setPasted(e.target.value)}
           placeholder={t("prob.paste")}
-          style={{ flex: 1, background: "var(--grey-6, #161616)", color: "inherit", border: "1px solid #333", borderRadius: 4, padding: 6, fontFamily: "var(--mono, monospace)", fontSize: 10.5, resize: "none" }} />
+          className="flux-textarea" style={{ flex: 1, fontSize: 10.5 }} />
         <button className="chat-send" disabled={busy || !pasted.trim()} onClick={() => void doTriage()}>
           {busy ? "…" : t("prob.triageBtn")}
         </button>

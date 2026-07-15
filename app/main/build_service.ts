@@ -139,9 +139,23 @@ export async function runBuild(sampleDir: string, bus: Bus, opts: BuildOptions =
   return runHpmBuild(sampleDir, bus);
 }
 
+/** Auto-detect the RISC-V toolchain: env override first, then ~/toolchains/*riscv*. */
+function detectRiscvToolchain(): string {
+  if (process.env["GNURISCV_TOOLCHAIN_PATH"]) return process.env["GNURISCV_TOOLCHAIN_PATH"];
+  const os = require("node:os") as typeof import("node:os");
+  const fs = require("node:fs") as typeof import("node:fs");
+  const root = `${os.homedir()}/toolchains`;
+  try {
+    const hit = fs.readdirSync(root).find((d) => /riscv/i.test(d) && fs.existsSync(`${root}/${d}/bin`));
+    if (hit) return `${root}/${hit}`;
+  } catch { /* no ~/toolchains */ }
+  return "/opt/riscv";
+}
+
 async function runHpmBuild(sampleDir: string, bus: Bus): Promise<BuildResult> {
-  const toolchain = process.env["GNURISCV_TOOLCHAIN_PATH"] ?? "/opt/riscv";
-  const sdk = process.env["HPM_SDK_BASE"] ?? "/home/exuber/hpm_sdk";
+  const os = require("node:os") as typeof import("node:os");
+  const toolchain = detectRiscvToolchain();
+  const sdk = process.env["HPM_SDK_BASE"] ?? `${os.homedir()}/hpm_sdk`;
   const buildDir = "/tmp/flux-build-" + Date.now();
   const progress = (phase: string, extra: Record<string, unknown> = {}): Promise<void> =>
     bus.publish({
@@ -153,7 +167,9 @@ async function runHpmBuild(sampleDir: string, bus: Bus): Promise<BuildResult> {
   return new Promise((resolve) => {
     exec(
       `mkdir -p ${buildDir} && cd ${buildDir} && cmake -DBOARD=hpm6e00evk -DHPM_SDK_BASE=${sdk} -DHPM_BUILD_TYPE=flash_xip ${sampleDir} && make -j4`,
-      { env: { ...process.env, GNURISCV_TOOLCHAIN_PATH: toolchain, HPM_SDK_BASE: sdk, PATH: `${toolchain}/bin:${process.env.PATH}` } },
+      // /usr/bin first: hpm_sdk cmake needs a python3 with pyyaml, and a leaked
+      // venv PATH often points at one without it (the pyyaml pitfall).
+      { env: { ...process.env, GNURISCV_TOOLCHAIN_PATH: toolchain, HPM_SDK_BASE: sdk, PATH: `${toolchain}/bin:/usr/bin:${process.env.PATH}` } },
       (err, stdout, stderr) => {
         const full = stdout + "\n" + stderr;
         if (err) {
