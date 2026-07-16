@@ -197,12 +197,18 @@ export function AssetDetail({ asset, projectPath, onClose, onDeleted, revealInEx
           )}
           {tab === "build" && (
             <div style={{ fontSize: 11 }}>
-              <div style={{ color: "var(--grey-3)", marginBottom: 8 }}>{t("ad.buildHint")} <code>{howto?.sample_entry ?? projectPath}</code>
+              {!howto?.sample_entry ? (
+                <div style={{ color: "var(--grey-3)", lineHeight: 1.7 }}>ℹ️ {t("ad.noSample")}</div>
+              ) : (
+              <>
+              <div style={{ color: "var(--grey-3)", marginBottom: 8 }}>{t("ad.buildHint")} <code>{howto.sample_entry}</code>
                 {howto?.board_arg ? <span> · BOARD=<code>{howto.board_arg}</code></span> : null}</div>
               {howto?.command && <pre className="pet-code" style={{ marginBottom: 8 }}>{howto.command}</pre>}
               <button data-guide="ad-build" className="chat-send" disabled={building} onClick={() => void doBuild()}>
                 {building ? t("rp.building") : t("rp.buildBtn")}
               </button>
+              </>
+              )}
               {buildOut && <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 10.5, wordBreak: "break-all" }}>{buildOut}</div>}
               <div style={{ marginTop: 14, color: "var(--grey-3)", fontWeight: 600 }}>{t("ad.toolchain")}</div>
               {["riscv32 GCC (xpack)", "HPM_SDK", "HPM OpenOCD", "Zephyr west + gnuarmemb"].map((x) => (

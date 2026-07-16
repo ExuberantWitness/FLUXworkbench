@@ -19,7 +19,7 @@ log = logging.getLogger("flux_insight")
 # flux_brain is editable-installed in brain/.venv; fall back to sibling path
 # so the server also works when launched with a bare python3.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flux_brain import asset_store, board_skillgen, codegen, devready, dts_ingest, fluxweave_core, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
+from flux_brain import asset_store, board_skillgen, chip_bind, codegen, devready, dts_ingest, fluxweave_core, onboard, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
 from flux_brain.llm_ollama import SCHEMATIC_PROMPT  # noqa: E402
 from flux_brain.llm_vllm import _data_url  # noqa: E402
 
@@ -295,6 +295,23 @@ TOOLS = [
          "board": {"type": "string", "description": "board id (must have a devready asset — run compose_devready first)"},
          "out_dir": {"type": "string", "description": "optional output dir (default ~/.flux/skills/<board>)"}},
       "required": ["board"]}},
+    {"name": "scan_devices", "description": "Enumerate every plugged-in debug probe (USB), classify vendor/probe type, read serial + virtual UART, and flag which match a known board profile. First step of onboarding — 'is anything connected?'.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "identify_device", "description": "Classify one probe by USB vid:pid — vendor, probe type, silicon family, serial, UART, and whether we still need the user to name the exact chip.",
+     "inputSchema": {"type": "object", "properties": {"vid": {"type": "string"}, "pid": {"type": "string"}}, "required": ["vid", "pid"]}},
+    {"name": "onboard_device", "description": "Full new-board onboarding for ANY MCU: build/augment the board profile, fetch+ingest its SVD register map, run a comm sanity test, and stamp the probe serial into a DevReady asset. Pass a known board id, or a chip model + vid/pid from scan_devices.",
+     "inputSchema": {"type": "object", "properties": {
+         "board": {"type": "string", "description": "known board id (skips chip lookup)"},
+         "chip": {"type": "string", "description": "exact chip model, e.g. STM32H743ZI (for a new/unknown board)"},
+         "vid": {"type": "string"}, "pid": {"type": "string"},
+         "serial": {"type": "string"}, "uart": {"type": "string"}}}},
+    {"name": "bind_chip", "description": "6th phase: stamp the DevReady record (magic + fingerprint + live chip UID) into the MCU's non-volatile Flash, read it back to verify persistence, and write the factory UID into the devready asset — binding asset↔silicon. Requires a real probe + openocd.",
+     "inputSchema": {"type": "object", "properties": {
+         "board": {"type": "string", "description": "board id (must have a devready asset)"},
+         "dry_run": {"type": "boolean", "description": "read UID + report the plan without erasing/writing Flash"}},
+      "required": ["board"]}},
+    {"name": "verify_chip", "description": "Real-board verification without firmware: spawn openocd, read the debug IDCODE + factory UID to confirm the silicon is alive and matches the profile. What characterization needs (no firmware HIL).",
+     "inputSchema": {"type": "object", "properties": {"board": {"type": "string"}}, "required": ["board"]}},
     {"name": "usage_stats", "description": "LLM token usage + routing-savings estimate (dashboard metering line). Aggregates the llm_usage table.",
      "inputSchema": {"type": "object", "properties": {
          "days": {"type": "number", "description": "Lookback window in days (default 7)"},
@@ -687,6 +704,30 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         out = board_skillgen.generate_board_skills(args["board"], args.get("out_dir"))
         if "error" not in out:
             log.info(f"board skills: {out['board']} -> {len(out['skills'])} skills in {out['skill_dir']}")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "scan_devices":
+        bj = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json")
+        return {"content": [{"type": "text", "text": json.dumps(onboard.scan(os.path.normpath(bj)), ensure_ascii=False)}]}
+    elif name == "identify_device":
+        bj = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json")
+        return {"content": [{"type": "text", "text": json.dumps(onboard.identify(args["vid"], args["pid"], os.path.normpath(bj)), ensure_ascii=False)}]}
+    elif name == "onboard_device":
+        bj = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json"))
+        out = onboard.onboard(bj, chip=args.get("chip"), board=args.get("board"),
+                              vid=args.get("vid"), pid=args.get("pid"),
+                              serial=args.get("serial", ""), uart=args.get("uart"))
+        if "error" not in out:
+            log.info(f"onboarded {out['board']} ({out['chip']}) serial={out['serial'][:12]} -> {out['devready_asset']}")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "verify_chip":
+        bj = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json"))
+        out = chip_bind.verify_chip_live(args["board"], bj)
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "bind_chip":
+        bj = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json"))
+        out = chip_bind.bind_chip(args["board"], bj, dry_run=bool(args.get("dry_run", False)))
+        if out.get("verified"):
+            log.info(f"bound {out['board']}: uid={out['uid']} fp={out['fingerprint']} @ {out['slot']}")
         return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
     elif name == "usage_stats":
         stats = asset_store.usage_stats(

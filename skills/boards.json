@@ -3,6 +3,62 @@
   "comment": "Board profiles drive device detection, USB authorization, real-probe connect, build and pinmux ingestion. Add a board = add an entry.",
   "boards": [
     {
+      "id": "nucleo-h743zi2",
+      "name": "ST NUCLEO-H743ZI2",
+      "chip": "STM32H743ZI",
+      "arch": "arm-cm7",
+      "usb": {
+        "vid": "0483",
+        "pid": "374e",
+        "label": "ST-Link"
+      },
+      "uart": {
+        "dev_hint": "/dev/ttyACM0",
+        "baud": 115200
+      },
+      "openocd": {
+        "bin": "openocd",
+        "search": "",
+        "cfgs": [
+          "interface/stlink.cfg",
+          "target/stm32h7x.cfg"
+        ],
+        "flash_driver": "stm32h7x (upstream)"
+      },
+      "build": {
+        "toolchain_env": "GNUARMEMB_TOOLCHAIN_PATH",
+        "toolchain_glob": "~/toolchains/*arm-none-eabi*",
+        "note": "characterization/bind need no build; add a real H743 sample to enable cross-compile"
+      },
+      "svd": "/home/exuber/.flux/svd/STM32H743x.svd",
+      "references": [
+        {
+          "title": "NUCLEO-H743ZI2 User Manual UM2407",
+          "url": "https://www.st.com/resource/en/user_manual/um2407-stm32h7-nucleo144-boards-mb1364-stmicroelectronics.pdf"
+        },
+        {
+          "title": "STM32H743 Reference Manual RM0433",
+          "url": "https://www.st.com/resource/en/reference_manual/rm0433-stm32h742-stm32h743753-and-stm32h750-value-line-advanced-armbased-32bit-mcus-stmicroelectronics.pdf"
+        },
+        {
+          "title": "STM32H743ZI product page",
+          "url": "https://www.st.com/en/microcontrollers-microprocessors/stm32h743zi.html"
+        }
+      ],
+      "geometry": {
+        "usd_ref": null,
+        "model_ref": null,
+        "dimensions_mm": [
+          147,
+          70,
+          null
+        ],
+        "mounting": "NUCLEO-144 form factor",
+        "note": "ST Zio + morpho headers"
+      },
+      "serial": "004600293438510C34313939"
+    },
+    {
       "id": "hpm6e00evk",
       "name": "HPMicro HPM6E00EVK",
       "chip": "HPM6E80",

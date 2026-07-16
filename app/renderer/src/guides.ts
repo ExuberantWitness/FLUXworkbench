@@ -29,6 +29,17 @@ export interface Guide {
 
 export const GUIDES: Guide[] = [
   {
+    id: "onboard",
+    titleKey: "guide.onboard.title",
+    match: "我连接/插入了一块新板子/开发板/单片机(hpm/stm32/h743/nucleo等)想让系统识别并自动建立档案+SVD寄存器资产+序列号; onboard a new/unknown MCU board, auto-detect and provision, any chip",
+    steps: [
+      { guide: "tab-real", tipKey: "guide.onboard.s1", advance: { kind: "tab", tab: "real" } },
+      { guide: "dev-scan", tipKey: "guide.onboard.s2", advance: { kind: "click" } },
+      { guide: "dev-onboard", tipKey: "guide.onboard.s3", advance: { kind: "event", topic: "asset.committed", where: { type: "devready" } } },
+    ],
+    next: "bringup",
+  },
+  {
     id: "bringup",
     titleKey: "guide.bringup.title",
     match: "用户连接了硬件/开发板/调试器，想识别、授权 USB、连接真板；bring up a real board, connect debugger, authorize probe",

@@ -31,6 +31,7 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
   const [report, setReport] = useState<Report | null>(null);
   const flux = (window as unknown as {
     flux: {
+      mcpCall(tool: string, args: Record<string, unknown>): Promise<string>;
       hilGenerate(goal: string, opts: Record<string, unknown>): Promise<{ plan: unknown; generated: boolean; error?: string }>;
       hilRun(plan: unknown): Promise<unknown>;
       evidenceList(): Promise<Array<{ runId: string; verdict: string; createdAt: number; content_hash: string }>>;
@@ -52,6 +53,16 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
   };
   useEffect(() => { void scanDevices(); }, []);
   const [authNote, setAuthNote] = useState("");
+  const onboard = async (d: { id: string; vid: string; pid: string }): Promise<void> => {
+    setDevBusy(`onb-${d.id}`); setAuthNote("");
+    try {
+      const out = JSON.parse(await flux.mcpCall("onboard_device", { board: d.id }));
+      if (out.error) { setAuthNote(`✗ ${out.error}`); return; }
+      const svd = (out.steps ?? []).find((x: { step: string }) => x.step === "svd");
+      setAuthNote(`✓ ${t("dev.onboarded")}: ${out.chip} · ${svd?.registers ?? 0} regs · SN ${String(out.serial).slice(0, 12)} → ${out.devready_asset}`);
+    } catch (e) { setAuthNote(`✗ ${(e as Error).message.slice(0, 120)}`); }
+    finally { setDevBusy(""); }
+  };
   const [osCaps, setOsCaps] = useState<{ usbScan: boolean; usbAuthorize: boolean } | null>(null);
   useEffect(() => {
     void (window as any).flux?.osInfo?.().then((o: any) => setOsCaps(o.caps)).catch(() => void 0); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -175,6 +186,9 @@ export function HilPanel({ events }: { events: FluxEvent[] }): React.ReactElemen
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               {d.present && (
                 <>
+                  <button data-guide="dev-onboard" className="ft-btn"
+                    disabled={devBusy === `onb-${d.id}`} title={t("dev.onboardTip")}
+                    onClick={() => void onboard(d)}>{devBusy === `onb-${d.id}` ? "⚡…" : t("dev.onboard")}</button>
                   <button data-guide="dev-authorize" className="ft-btn"
                     disabled={devBusy === `auth-${d.vid}` || osCaps?.usbAuthorize === false}
                     title={osCaps?.usbAuthorize === false ? t("dev.noOsAuth") : t("dev.authTip")}

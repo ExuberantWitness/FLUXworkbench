@@ -259,8 +259,48 @@ async function bootKernel(): Promise<void> {
   const goldenPath = new GoldenPath(bus, mcp, hil, missions,
     path.join(repoRoot(), "examples", "hil", "gpio_smoke.json"), runTriage,
     (plan, report, t0) => writeEvidenceBundle(recorder, mcp, bus, plan, report, t0).then(() => void 0));
-  ipcMain.handle("flux:missionStart", async (_evt, goal: string, opts?: GoldenPathOpts) =>
-    goldenPath.run(goal, opts ?? {}));
+  // Auto-resolve board + backend from what's plugged in + the goal's own words,
+  // so the user just types intent — no dropdowns. Explicit opts (from tools)
+  // still win. Determinism first (device present → real), natural-language
+  // overrides second ("simulate"/"仿真" → sim, "mock"/"dry" → mock).
+  const resolveMission = async (goal: string, opts: GoldenPathOpts): Promise<GoldenPathOpts & { why?: string }> => {
+    if (opts.board && opts.backend) return opts; // fully specified — respect it
+    const boards = loadBoards();
+    const lsusb: string = await new Promise((res) => exec("lsusb", (_e, o) => res(o ?? "")));
+    const present = boards.filter((b) => new RegExp(`ID\\s+${b["usb"]?.vid}:${b["usb"]?.pid}`, "i").test(lsusb));
+    const g = goal.toLowerCase();
+    // board: goal-named board wins, else the single plugged-in board, else first profile
+    let board = opts.board
+      ? boards.find((b) => b["id"] === opts.board)
+      : boards.find((b) => g.includes(b["id"]) || g.includes(String(b["chip"]).toLowerCase()) || g.includes(String(b["name"]).toLowerCase().split(" ").pop() ?? "＿"));
+    if (!board) board = present[0] ?? boards[0];
+    const isPresent = board ? present.some((p) => p["id"] === board!["id"]) : false;
+    const hasOpenocd = await new Promise<boolean>((r) => exec("command -v openocd", (_e, o) => r(!!(o ?? "").trim())));
+    // backend: explicit words override; else real when the board is physically
+    // here + openocd available; else mock.
+    let backend: "mock" | "sim" | "real" = opts.backend as "mock" | "sim" | "real";
+    if (!backend) {
+      if (/\bsim(ulat|)|仿真|renode\b/.test(g)) backend = "sim";
+      else if (/\bmock|dry|no hardware|无硬件|不接/.test(g)) backend = "mock";
+      else backend = (isPresent && hasOpenocd) ? "real" : "mock";
+    }
+    const out: GoldenPathOpts & { why?: string } = {
+      ...opts, backend,
+      board: board?.["id"], chip: board?.["chip"],
+    };
+    const svd = board?.["svd"];
+    if (typeof svd === "string" && svd.includes("/")) out.svdPath = svd;
+    else if (board?.["pinmux"]) out.pinmuxPath = board["pinmux"];
+    out.why = board
+      ? `${board["name"]} · ${backend}${isPresent ? " (plugged in)" : ""}${backend === "real" && !hasOpenocd ? " ⚠ openocd missing" : ""}`
+      : "no board profile found";
+    return out;
+  };
+  ipcMain.handle("flux:missionStart", async (_evt, goal: string, opts?: GoldenPathOpts) => {
+    const resolved = await resolveMission(goal, opts ?? {});
+    const res = await goldenPath.run(goal, resolved);
+    return { ...res, resolved: { board: resolved.board, backend: resolved.backend, why: resolved.why } };
+  });
   ipcMain.handle("flux:missionList", async () => missions.list());
   ipcMain.handle("flux:trajectoryStats", async () => trajectoryStats());
   ipcMain.handle("flux:evidenceList", async () => listEvidence());

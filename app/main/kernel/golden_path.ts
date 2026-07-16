@@ -96,8 +96,12 @@ export class GoldenPath {
       this.missions.milestone(missionId, "identify", "done",
         known ? "register-map asset found" : "device unknown to asset store");
 
-      // ── ingest: SVD → register-map asset, or pinmux.c → pin-map asset for
-      // boards with no SVD (HPMicro). Whichever is provided.
+      // ── ingest: ONE mutually-exclusive chain. SVD wins (full register map);
+      // pinmux is the fallback for boards without an SVD (HPMicro); the bare
+      // else only fires when there was truly nothing to ingest. Two separate
+      // ifs here once double-fired ("no pinmux_path" / spurious ingest-fail
+      // after a successful SVD ingest on a fresh store).
+      let characterizedOnly = false; // pinmap ingested, no register-map for HIL
       if (opts.svdPath) {
         this.missions.milestone(missionId, "ingest", "start");
         const summary = JSON.parse(mcpText(
@@ -108,9 +112,7 @@ export class GoldenPath {
           trace_id: missionId,
         });
         this.missions.milestone(missionId, "ingest", "done", String(summary["asset_id"] ?? ""));
-      }
-      let characterizedOnly = false; // pinmap ingested, no register-map for HIL
-      if (opts.pinmuxPath || (opts.board && !known)) {
+      } else if (opts.pinmuxPath || (opts.board && !known)) {
         this.missions.milestone(missionId, "ingest", "start");
         const args: Record<string, unknown> = { board: opts.board ?? chip };
         if (opts.pinmuxPath) args["pinmux_path"] = opts.pinmuxPath;
@@ -135,15 +137,52 @@ export class GoldenPath {
       // ── characterization-only DevReady: a board with just a pin-map (no
       // register map / SVD) and no real probe can't run firmware-level HIL.
       // The DevReady deliverable IS the characterized asset — mark PASS and
-      // stop, instead of failing an STM32-style firmware check on a mock.
-      if (characterizedOnly && backend !== "real") {
-        this.missions.milestone(missionId, "plan", "done", "skipped — characterization asset (no register map / real board for HIL)");
+      // stop, instead of failing on a mock that can't simulate this chip.
+      //
+      // The mock backend ONLY simulates STM32F103 (spike/mock-scenarios). So on
+      // mock/sim, firmware HIL is meaningful ONLY for that demo board; every
+      // other board (H743, HPM, …) would read zeros and fail every assertion.
+      // For those, characterization (register map / pin map ingested) = DevReady.
+      const mockDemoBoard = /stm32f103/i.test(chip) || board === "stm32f103-bluepill";
+      if (backend !== "real" && (characterizedOnly || !mockDemoBoard)) {
+        this.missions.milestone(missionId, "plan", "done",
+          mockDemoBoard ? "skipped — characterization asset" : "skipped — mock only simulates STM32F103");
         this.missions.milestone(missionId, "verify", "done", "characterized ✓ (connect a real board to run firmware HIL)");
         this.missions.milestone(missionId, "commit", "start");
         const rec = this.missions.finish(missionId, "PASS");
         if (rec) await this.commitMissionAsset(rec, true);
         await this.refreshDevready(opts.board, missionId);
         this.missions.milestone(missionId, "commit", "done");
+        const out: GoldenPathResult = { missionId, planGenerated: true };
+        if (rec) out.record = rec;
+        return out;
+      }
+
+      // ── real board: verify by reading the LIVE silicon (IDCODE + factory
+      // UID) over the debug link, not a firmware HIL. Characterization needs
+      // proof the chip is present & matches the profile — not proof that some
+      // firmware runs. Uses chip_bind's direct-openocd path, so it works
+      // regardless of whether the bus OpenOcdAgent was pre-connected. The AI
+      // picked `real` because a board is plugged in; this is what that means.
+      if (backend === "real") {
+        this.missions.milestone(missionId, "plan", "done", "live chip verification (no firmware needed)");
+        this.missions.milestone(missionId, "verify", "start", "reading IDCODE + UID over the debug link…");
+        let ok = false; let vdetail = "";
+        try {
+          const v = JSON.parse(mcpText(await this.mcp.callTool("verify_chip", { board }, 70)));
+          ok = !!v["ok"];
+          vdetail = ok
+            ? `IDCODE ${v["idcode"]} · dev ${v["device_id"]} · UID ${String(v["uid"]).slice(0, 12)}`
+            : String(v["error"] ?? v["note"] ?? "no response");
+        } catch (e) { vdetail = (e as Error).message.slice(0, 100); }
+        this.missions.milestone(missionId, "verify", ok ? "done" : "fail", vdetail);
+        if (!ok) void this.triage(`Real-board verify FAILED on ${board}: ${vdetail}`, "hil", { board, missionId });
+        this.missions.milestone(missionId, "commit", "start");
+        const rec = this.missions.finish(missionId, ok ? "PASS" : "FAIL");
+        if (rec) await this.commitMissionAsset(rec, true);
+        await this.refreshDevready(opts.board, missionId);
+        this.missions.milestone(missionId, "commit", "done");
+        if (ok) await this.bindChip(opts.board, backend, missionId); // 6th phase: stamp Flash
         const out: GoldenPathResult = { missionId, planGenerated: true };
         if (rec) out.record = rec;
         return out;
@@ -170,7 +209,8 @@ export class GoldenPath {
       }
 
       // ── verify: run on mock|real|sim, triage on FAIL ──
-      this.missions.milestone(missionId, "verify", "start");
+      this.missions.milestone(missionId, "verify", "start",
+        `flashing + ${plan.steps.length} checks on ${backend}…`);
       const verifyT0 = Date.now();
       const report = await this.hil.run(plan);
       const ok = report.summary.verdict === "PASS";
@@ -194,6 +234,9 @@ export class GoldenPath {
       if (record) await this.commitMissionAsset(record, planGenerated);
       await this.refreshDevready(opts.board, missionId);
       this.missions.milestone(missionId, "commit", "done");
+      // ── bind (6th phase): stamp the DevReady record into the real chip's
+      // Flash + read back. Only for a real probe — mock/sim have no silicon. ──
+      await this.bindChip(opts.board, backend, missionId);
       const result: GoldenPathResult = { missionId, report, planGenerated };
       if (record) result.record = record;
       return result;
@@ -203,6 +246,28 @@ export class GoldenPath {
       return { missionId, error: (e as Error).message };
     } finally {
       this.inflightKeys.delete(key);
+    }
+  }
+
+  /** 6th phase: bind asset↔silicon by writing the DevReady record into the
+   * real chip's Flash. Real probe only; best-effort (needs openocd + authorized
+   * probe) — a bind failure never fails the mission. */
+  private async bindChip(board: string | undefined, backend: string, missionId: string): Promise<void> {
+    if (!board || backend !== "real") return;
+    this.missions.milestone(missionId, "bind", "start");
+    try {
+      const out = JSON.parse(mcpText(await this.mcp.callTool("bind_chip", { board }, 70)));
+      if (out.verified) {
+        this.missions.milestone(missionId, "bind", "done", `UID ${String(out.uid).slice(0, 12)} @ ${out.slot}`);
+        await this.bus.publish({
+          source: "golden-path", kind: "execute", topic: "asset.committed",
+          data: { asset_id: `devready-${board}`, type: "devready" }, trace_id: missionId,
+        });
+      } else {
+        this.missions.milestone(missionId, "bind", "fail", String(out.error ?? "readback mismatch").slice(0, 100));
+      }
+    } catch (e) {
+      this.missions.milestone(missionId, "bind", "fail", (e as Error).message.slice(0, 100));
     }
   }
 

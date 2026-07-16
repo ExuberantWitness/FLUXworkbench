@@ -97,6 +97,9 @@ export class HilRunner {
   ): Promise<HilStepResult> {
     const base: HilStepResult = { id: step.id, type: step.type, status: "pass", durationMs: 0, detail: {} };
     const traceId = `${runId}-${step.id}`;
+    // LLM-generated plans occasionally omit `params` (e.g. a bare reset step);
+    // default it so every `step.params.X` access below is safe, not a crash.
+    step.params = step.params ?? {};
     try {
       switch (step.type) {
         case "build": {

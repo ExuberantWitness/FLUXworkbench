@@ -33,8 +33,11 @@ def _access(v: Any) -> str | None:
 
 def parse_svd(svd_path: str) -> dict[str, Any]:
     """Parse an SVD file into the register-map characterization schema."""
+    import os
     from cmsis_svd import SVDParser
 
+    # profiles may store ~/... paths; SVDParser (and openocd) don't expand ~.
+    svd_path = os.path.expanduser(svd_path)
     dev = SVDParser.for_xml_file(svd_path).get_device(xml_validation=False)
     peripherals = []
     for p in dev.get_peripherals():
@@ -67,10 +70,16 @@ def parse_svd(svd_path: str) -> dict[str, Any]:
             "description": (p.description or "").strip(),
             "registers": registers,
         })
+    # cpu.name is an SVDCPUNameType enum on modern SVDs (e.g. STM32H7) — coerce
+    # to its string value so the asset stays JSON-serializable. Older SVDs
+    # (STM32F1) have no <cpu> block and this is simply None.
+    cpu = getattr(dev, "cpu", None)
+    cpu_name = getattr(cpu, "name", None)
+    cpu_str = getattr(cpu_name, "value", None) or (str(cpu_name) if cpu_name is not None else None)
     return {
         "device": {
             "name": dev.name,
-            "cpu": getattr(getattr(dev, "cpu", None), "name", None),
+            "cpu": cpu_str,
             "width": dev.width,
             "address_unit_bits": dev.address_unit_bits,
         },
@@ -80,6 +89,8 @@ def parse_svd(svd_path: str) -> dict[str, Any]:
 
 def svd_to_asset(svd_path: str, chip: str | None = None) -> dict[str, Any]:
     """Wrap a parsed SVD in the devready asset envelope."""
+    import os
+    svd_path = os.path.expanduser(svd_path)
     char = parse_svd(svd_path)
     device = chip or char["device"]["name"]
     sha = hashlib.sha256(Path(svd_path).read_bytes()).hexdigest()

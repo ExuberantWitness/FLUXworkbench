@@ -10,8 +10,8 @@ import type { Bus } from "./bus";
 import type { Event } from "./types";
 import { TrajectoryWriter } from "./recorder";
 
-export type MissionPhase = "identify" | "ingest" | "plan" | "verify" | "commit";
-export const MISSION_PHASES: MissionPhase[] = ["identify", "ingest", "plan", "verify", "commit"];
+export type MissionPhase = "identify" | "ingest" | "plan" | "verify" | "commit" | "bind";
+export const MISSION_PHASES: MissionPhase[] = ["identify", "ingest", "plan", "verify", "commit", "bind"];
 
 export interface MissionRecord {
   missionId: string;
@@ -76,9 +76,12 @@ export class MissionEngine {
   }
 
   milestone(missionId: string, phase: MissionPhase, status: "start" | "done" | "fail", detail?: string): void {
+    // Record on the live mission if present, else on its history entry (the
+    // bind/commit-done phases fire AFTER finish() has archived the mission).
+    // The bus event ALWAYS publishes so the UI sees every phase.
     const m = this.missions.get(missionId);
-    if (!m) return;
-    m.rec.milestones.push({ phase, status, ts: Date.now(), detail });
+    const rec = m?.rec ?? this.history.find((r) => r.missionId === missionId);
+    rec?.milestones.push({ phase, status, ts: Date.now(), detail });
     void this.publish(missionId, phase, status, detail);
   }
 

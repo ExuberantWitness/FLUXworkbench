@@ -133,10 +133,62 @@ async function runZephyrBuild(appDir: string, board: string, bus: Bus, pristine:
 }
 
 export async function runBuild(sampleDir: string, bus: Bus, opts: BuildOptions = {}): Promise<BuildResult> {
+  // Resolve to an absolute source dir. The build cmd cd's into a temp buildDir
+  // before invoking cmake, so a relative sampleDir (e.g. a profile's
+  // "firmware/motor_pid") would resolve against /tmp, not the repo — the
+  // "source directory does not exist" failure. Expand ~ and repo-relative here.
+  if (sampleDir.startsWith("~")) {
+    sampleDir = path.join(process.env["HOME"] ?? "", sampleDir.slice(1));
+  } else if (!path.isAbsolute(sampleDir)) {
+    sampleDir = path.join(repoRoot(), sampleDir);
+  }
   if (opts.toolchain === "zephyr") {
     return runZephyrBuild(sampleDir, opts.board ?? "stm32_min_dev@blue", bus, opts.pristine ?? false);
   }
-  return runHpmBuild(sampleDir, bus, opts.board ?? "hpm6e00evk");
+  // Detect the build system instead of assuming cmake: a bare-metal sample
+  // (e.g. firmware/motor_pid) ships a build.sh, a Makefile project needs make,
+  // and only HPM SDK samples have a CMakeLists.txt. Wrong assumption = the
+  // "does not contain CMakeLists.txt" crash.
+  if (!existsSync(sampleDir)) {
+    return { ok: false, error: `sample directory not found: ${sampleDir}` };
+  }
+  if (existsSync(path.join(sampleDir, "CMakeLists.txt"))) {
+    return runHpmBuild(sampleDir, bus, opts.board ?? "hpm6e00evk");
+  }
+  if (existsSync(path.join(sampleDir, "build.sh"))) {
+    return runScriptBuild(sampleDir, "bash build.sh", bus);
+  }
+  if (existsSync(path.join(sampleDir, "Makefile"))) {
+    return runScriptBuild(sampleDir, "make -j4", bus);
+  }
+  return { ok: false, error: `no recognized build system in ${sampleDir} `
+    + `(need CMakeLists.txt, build.sh, or Makefile)` };
+}
+
+/** Bare-metal / Makefile sample: run its own build command in-place, stream
+ *  diagnostics through the same parser. No cmake assumption. */
+async function runScriptBuild(sampleDir: string, cmd: string, bus: Bus): Promise<BuildResult> {
+  const emit = (phase: string, extra: Record<string, unknown> = {}): void => {
+    void bus.publish({ source: "build-service", kind: "execute", topic: "build.progress",
+      data: { phase, sampleDir, ...extra }, trace_id: `sbuild-${Date.now()}` });
+  };
+  emit("start");
+  return new Promise((resolve) => {
+    exec(cmd, { cwd: sampleDir, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const full = stdout + stderr;
+      for (const d of parseDiagnostics(full)) {
+        void bus.publish({ source: "build-service", kind: "error", topic: "build.diagnostic",
+          data: d as unknown as Record<string, unknown>, trace_id: `diag-${Date.now()}` });
+      }
+      if (err) {
+        emit("done", { ok: false });
+        resolve({ ok: false, error: stderr.slice(-2000) || err.message, log: full.slice(-4000) });
+        return;
+      }
+      emit("done", { ok: true });
+      resolve({ ok: true, elf: findElf(sampleDir), log: stdout.slice(-500) });
+    });
+  });
 }
 
 /** Auto-detect the RISC-V toolchain: env override first, then ~/toolchains/*riscv*. */

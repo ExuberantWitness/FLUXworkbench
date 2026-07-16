@@ -7,7 +7,7 @@ import { useLang } from "./i18n";
 
 interface FluxEvent { topic: string; data: Record<string, unknown>; trace_id: string }
 
-const PHASES = ["identify", "ingest", "plan", "verify", "commit"] as const;
+const PHASES = ["identify", "ingest", "plan", "verify", "commit", "bind"] as const;
 
 const LIGHT: Record<string, string> = {
   done: "#4caf50", fail: "#f44336", start: "#2196f3",
@@ -24,41 +24,16 @@ interface MissionResult {
   error?: string;
 }
 
-interface BoardProfile { id: string; name: string; chip: string; pinmux?: string; svd?: string; usb?: { vid: string; pid: string } }
+interface ResolvedInfo { board?: string; backend?: string; why?: string }
 
 export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactElement {
   const { t } = useLang();
-  const [goal, setGoal] = useState("Characterize the board and build a DevReady asset");
-  const [boards, setBoards] = useState<BoardProfile[]>([]);
-  const [boardId, setBoardId] = useState("");
-  const [backend, setBackend] = useState("mock");
   const [running, setRunning] = useState(false);
   const [missionId, setMissionId] = useState("");
-  const [result, setResult] = useState<MissionResult | null>(null);
+  const [result, setResult] = useState<(MissionResult & { resolved?: ResolvedInfo }) | null>(null);
   const flux = (window as unknown as {
-    flux: {
-      missionStart(goal: string, opts: Record<string, unknown>): Promise<MissionResult>;
-      boards(): Promise<BoardProfile[]>;
-      deviceStatus(): Promise<Array<{ id: string; present: boolean }>>;
-    };
+    flux: { missionStart(goal: string, opts: Record<string, unknown>): Promise<MissionResult & { resolved?: ResolvedInfo }> };
   }).flux;
-
-  // Board selector from skills/boards.json; default to a plugged-in device.
-  const [presentIds, setPresentIds] = useState<string[]>([]);
-  useEffect(() => {
-    void (async () => {
-      const bs = await flux.boards().catch(() => []);
-      setBoards(bs);
-      let pick = bs[0]?.id ?? "";
-      try {
-        const present = (await flux.deviceStatus()).filter((d) => d.present).map((d) => d.id);
-        setPresentIds(present);
-        if (present.length) pick = present[0]!;
-      } catch { /* lsusb unavailable */ }
-      setBoardId(pick);
-    })();
-  }, []);
-  const board = boards.find((b) => b.id === boardId);
 
   // Latest status per phase for the current mission (mission.milestone events).
   const phaseStatus = useMemo(() => {
@@ -83,18 +58,9 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
     // The kernel assigns the real id; clear filter until the result returns.
     setMissionId("");
     try {
-      // board-aware: pass chip + board id + its pinmux/svd source so the golden
-      // path characterizes the RIGHT device (not the STM32 default).
-      const opts: Record<string, unknown> = { backend };
-      if (board) {
-        opts["chip"] = board.chip;
-        opts["board"] = board.id;
-        // only a real filesystem path counts (boards.json may hold a descriptive
-        // svd string like "STM32F103xx (ingest_svd)"); pinmux is always a path.
-        if (board.svd?.includes("/")) opts["svdPath"] = board.svd;
-        else if (board.pinmux) opts["pinmuxPath"] = board.pinmux;
-      }
-      const r = await flux.missionStart(goal, opts);
+      // No dropdowns: the kernel auto-resolves board + backend from what's
+      // plugged in and the goal's own words. Just send intent.
+      const r = await flux.missionStart("Characterize the connected board and build a DevReady asset", {});
       setResult(r); setMissionId(r.missionId);
     } catch (e) {
       setResult({ missionId: "", error: (e as Error).message });
@@ -106,39 +72,41 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
 
   const seconds = (ms?: number): string => (ms ? `${(ms / 1000).toFixed(1)}s` : "—");
 
+  // Live elapsed timer while a mission runs, so a slow phase (flashing in
+  // verify) shows progress + elapsed instead of looking frozen.
+  const [elapsed, setElapsed] = useState(0);
+  const runStart = React.useRef(0);
+  useEffect(() => {
+    if (!running) return;
+    runStart.current = Date.now();
+    const id = setInterval(() => setElapsed(Date.now() - runStart.current), 200);
+    return () => clearInterval(id);
+  }, [running]);
+  // Which phase is currently in-flight (started, not yet done/fail).
+  const activePhase = [...PHASES].reverse().find((p) => phaseStatus.get(p)?.status === "start");
+  // Current HIL step during verify (hil.step events carry per-step status).
+  const liveHilStep = useMemo(() => {
+    const steps = events.filter((e) => e.topic === "hil.step");
+    const last = steps[steps.length - 1]?.data as { stepId?: string; type?: string; status?: string } | undefined;
+    return last ? `${last.type ?? ""} ${last.stepId ?? ""} · ${last.status ?? ""}` : "";
+  }, [events]);
+
   // (First-run guidance now lives in the desk pet — bottom right.)
   // data-* attrs = live panel state for the pet's preflight rules (read at hover time).
   return (
-    <div data-board={boardId} data-backend={backend} data-present={presentIds.join(",")}
-      style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, height: "100%", overflow: "auto" }}>
-      <div style={{ fontSize: 12, color: "var(--grey-3)", fontWeight: 600 }}>{t("mission.head")}</div>
-      <div style={{ display: "flex", gap: 6 }}>
-        <input data-guide="mission-goal" className="flux-input" style={{ flex: 1 }} value={goal}
-          onChange={(e) => setGoal(e.target.value)} placeholder={t("mission.goalPh")} />
-        <button className="chat-send" data-guide="mission-start" disabled={running || !goal.trim()}
-          onKeyDown={(e) => { if (e.key === "Enter" && e.repeat) { e.preventDefault(); e.stopPropagation(); } }}
-          onClick={() => void start()}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, height: "100%", overflow: "auto" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+        <button className="chat-send" data-guide="mission-start" disabled={running}
+          style={{ padding: "10px 28px", fontSize: 13 }} onClick={() => void start()}>
           {running ? t("mission.running") : t("mission.start")}
         </button>
+        <span style={{ fontSize: 10.5, color: "var(--grey-3)" }}>{t("mission.autoNote")}</span>
       </div>
-      <div style={{ display: "flex", gap: 6, fontSize: 11, alignItems: "center" }}>
-        <span style={{ color: "var(--grey-3)" }}>{t("mission.board")}</span>
-        <select className="flux-select" style={{ flex: 1 }} value={boardId} onChange={(e) => setBoardId(e.target.value)}>
-          {boards.length === 0 && <option value="">(no boards.json)</option>}
-          {boards.map((b) => <option key={b.id} value={b.id}>{b.name} · {b.chip}</option>)}
-        </select>
-        <select className="flux-select" value={backend} onChange={(e) => setBackend(e.target.value)} title="backend">
-          {["mock", "sim", "real"].map((b) => <option key={b}>{b}</option>)}
-        </select>
-      </div>
-      {board && (
-        <div style={{ fontSize: 10, color: "var(--grey-3)" }}>
-          {board.svd?.includes("/") ? "SVD" : board.pinmux ? t("mission.viaPinmux") : t("mission.viaRegmap")}
-          {backend !== "real" && (board.pinmux && !board.svd?.includes("/")) ? ` · ${t("mission.charOnly")}` : ""}
-        </div>
+      {result?.resolved?.why && (
+        <div style={{ fontSize: 10.5, color: "var(--grey-3)" }}>🎯 {t("mission.autoPicked")}: {result.resolved.why}</div>
       )}
 
-      {/* The one road: five phase lights */}
+      {/* The one road: phase lights */}
       <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: 14, justifyContent: "center" }}>
         {PHASES.map((p, i) => {
           const st = phaseStatus.get(p);
@@ -161,6 +129,14 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
           );
         })}
       </div>
+
+      {running && activePhase && (
+        <div style={{ alignSelf: "center", marginTop: 6, fontSize: 11, color: "var(--accent)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="pet-face" style={{ fontSize: 13, animation: "none" }}>⏳</span>
+          <span>{t(`mission.${activePhase}`)} · {(elapsed / 1000).toFixed(1)}s
+            {activePhase === "verify" && liveHilStep ? ` · ${liveHilStep}` : ""}</span>
+        </div>
+      )}
 
       {result && (
         <div className="rp-card" style={{ marginTop: 10, alignSelf: "center", minWidth: 420 }}>

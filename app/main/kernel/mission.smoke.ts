@@ -77,6 +77,26 @@ async function main(): Promise<void> {
   const eventFiles = readdirSync(path.join(FLUX_HOME, "events")).filter((f) => f.endsWith(".jsonl"));
   if (eventFiles.length === 0) fail("event recorder wrote nothing");
 
+  // ── case 2: SVD board + board id on a FRESH store (the field failure).
+  // Regression: the pinmux fallback used to fire alongside svdPath ingest
+  // (board && !known), erroring "no pinmux_path given and no profile" on
+  // STM32 profiles that have no pinmux field. svdPath must suppress it. ──
+  const svd = path.join(process.env["HOME"] ?? "", ".flux", "svd", "STM32H743x.svd");
+  if (existsSync(svd)) {
+    const res2 = await gp.run("Characterize the H743 board", {
+      backend: "mock", board: "nucleo-h743zi2", chip: "STM32H743ZI", svdPath: svd,
+    });
+    const bad = (res2.record?.milestones ?? [])
+      .find((m) => (m.detail ?? "").toLowerCase().includes("pinmux"));
+    if (bad) fail(`pinmux fallback fired for an SVD board: ${bad.detail}`);
+    const ingested = (res2.record?.milestones ?? [])
+      .some((m) => m.phase === "ingest" && m.status === "done" && (m.detail ?? "").includes("regmap-"));
+    if (!ingested) fail("case2: svd ingest milestone missing");
+    console.log(`case2 (svd board, fresh store): verdict ${res2.record?.verdict}, no pinmux misfire ✓`);
+  } else {
+    console.log("case2 skipped (no local H743 svd cache)");
+  }
+
   console.log(`mission.smoke: ALL OK (trajectory ${lines.length} lines, evidence ${bundles.length} bundle(s), ` +
     `${eventFiles.length} event file(s))`);
   await mcp.stopAll();
