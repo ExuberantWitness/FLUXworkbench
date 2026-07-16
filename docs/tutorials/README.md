@@ -4,6 +4,12 @@ studio 典型功能的分镜剧本 + 录制清单。每个 `.md` 是一份可照
 
 Scripts for the studio's typical features. Each `.md` is a shot-by-shot script you can record in one take; drop the recorded mp4/gif into `media/` using the filename each script specifies.
 
+### 01 · PCB → BSP（已录 / recorded）
+
+![PCB to BSP](media/01-pcb-to-bsp.gif)
+
+贴一个 GitHub 链接（`github.com/cfrpg/Vigilator`）→ 自动克隆、解析设计文件、提取 MCU/引脚/外设 → 交互连接图（点器件看它连了哪些引脚）。真实界面，Playwright 驱动 Electron 自动录制。
+
 ## 教程清单 / Tutorials
 
 | # | 功能 Feature | 剧本 Script | 时长 | 视频 |

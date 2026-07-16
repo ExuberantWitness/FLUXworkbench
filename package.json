@@ -2,7 +2,7 @@
   "name": "fluxworkbench",
   "version": "0.1.0",
   "author": "Flux Workbench Team",
-  "description": "Flux Workbench v2 \u2014 robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
+  "description": "Flux Workbench v2 — robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "pnpm --filter @fluxworkbench/app dev",
@@ -21,6 +21,7 @@
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3",
+    "playwright": "^1.61.1",
     "typescript": "^5.7.2"
   },
   "build": {

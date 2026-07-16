@@ -1,6 +1,10 @@
 # 剧本 01 — PCB → BSP（从设计文件提取板级支持包）
 
-**视频文件**：`media/01-pcb-to-bsp.mp4` · **时长**：~2min · **界面语言**：录 zh + en 各一版
+![PCB to BSP demo](media/01-pcb-to-bsp.gif)
+
+> ↑ 真实界面自动化录制（Playwright 驱动 Electron）：贴 `github.com/cfrpg/Vigilator` → 提取 BSP → 交互连接图。点 MLX90640，只有 PA5/PA6（I2C）高亮。
+
+**视频文件**：`media/01-pcb-to-bsp.gif`（自动生成）· **时长**：~8s · **界面语言**：录 zh + en 各一版
 
 ## 一句话价值 / Hook
 

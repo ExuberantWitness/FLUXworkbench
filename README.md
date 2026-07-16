@@ -21,6 +21,10 @@ First boot comes straight up in **mock/simulation mode** — run the guided devi
 
 ## 🎬 Tutorials / 视频教程
 
+![PCB to BSP demo](docs/tutorials/media/01-pcb-to-bsp.gif)
+
+> **PCB → BSP** in ~8s: paste a GitHub URL → auto-clone, parse the design files, extract the MCU + pins + peripherals → interactive wiring graph (click a device to see which pins it's wired to). Real UI, recorded by driving the Electron app with Playwright.
+
 Shot-by-shot scripts for the studio's typical features (record-ready; videos land in `docs/tutorials/media/`). See the index: **[docs/tutorials/](docs/tutorials/README.md)**
 
 | # | Feature | Script |
