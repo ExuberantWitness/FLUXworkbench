@@ -21,20 +21,29 @@ First boot comes straight up in **mock/simulation mode** — run the guided devi
 
 ## 🎬 Tutorials / 视频教程
 
+真实界面演示，全部由 Playwright 驱动真实 Electron 应用自动录制——真界面、真数据、真交互。索引与逐格剧本：**[docs/tutorials/](docs/tutorials/README.md)**
+
+All demos below are recorded by driving the real Electron app with Playwright — real UI, real data, real interaction.
+
+### 01 · PCB → BSP　[剧本](docs/tutorials/01-pcb-to-bsp.md)
+贴一个 GitHub 链接 → 自动克隆、解析设计文件（.ioc + 网表）→ 提取 MCU/引脚/外设 → 交互连接图（点器件看它连了哪些引脚）。
 ![PCB to BSP demo](docs/tutorials/media/01-pcb-to-bsp.gif)
 
-> **PCB → BSP** in ~8s: paste a GitHub URL → auto-clone, parse the design files, extract the MCU + pins + peripherals → interactive wiring graph (click a device to see which pins it's wired to). Real UI, recorded by driving the Electron app with Playwright.
+### 03 · 真板调通 + 芯片烙印　[剧本](docs/tutorials/03-real-bringup-and-bind.md)
+一个按钮，六阶段：识别→入库→计划→验证→沉淀→烙印。真板 NUCLEO-H743，读到 IDCODE `0x20036450`，把 DevReady 记录烙进芯片 Flash。
+![real bring-up + bind](docs/tutorials/media/03-real-bringup-and-bind.gif)
 
-Shot-by-shot scripts for the studio's typical features (record-ready; videos land in `docs/tutorials/media/`). See the index: **[docs/tutorials/](docs/tutorials/README.md)**
+### 02 · 设备上机　[剧本](docs/tutorials/02-device-onboard.md)
+真实页检测 → ⚡一键上机：识别探针 + 读序列号 + 找芯片 + 拉寄存器手册（2955 寄存器入库）+ 序列号写进资产。
+![device onboard](docs/tutorials/media/02-device-onboard.gif)
 
-| # | Feature | Script |
-|---|---|---|
-| 01 | **PCB → BSP** — paste a GitHub URL, auto-extract the board-support package + interactive wiring graph | [01-pcb-to-bsp.md](docs/tutorials/01-pcb-to-bsp.md) |
-| 02 | **Device onboard** — plug in any MCU board, auto identify → profile → ingest | [02-device-onboard.md](docs/tutorials/02-device-onboard.md) |
-| 03 | **Real bring-up + chip bind** — 6-phase golden path, write a DevReady record into the chip's Flash | [03-real-bringup-and-bind.md](docs/tutorials/03-real-bringup-and-bind.md) |
-| 04 | **DevReady asset** — the self-describing `.flux` living file (pins / RTOS / memory / docs) | [04-devready-asset.md](docs/tutorials/04-devready-asset.md) |
-| 05 | **Desk-pet guide** — talk to 小Flux; it classifies intent and highlights the controls to click | [05-desk-pet-guided.md](docs/tutorials/05-desk-pet-guided.md) |
-| 06 | **One-click install** — Windows / macOS / Linux, embedded runtime | [06-install.md](docs/tutorials/06-install.md) |
+### 04 · DevReady 资产　[剧本](docs/tutorials/04-devready-asset.md)
+每块调通的板子沉淀成一个自描述 `.flux` 活档案：引脚 / RTOS / 调试记忆 / 官方资料 / 生命记录。
+![DevReady asset](docs/tutorials/media/04-devready-asset.gif)
+
+### 05 · 小Flux 助手　[剧本](docs/tutorials/05-desk-pet-guided.md) · 06 · [一键安装](docs/tutorials/06-install.md)
+右下角桌宠：对话即操作，分类你的意图，高亮该点的控件带你走完流程。
+![desk pet](docs/tutorials/media/05-desk-pet-guided.gif)
 
 ## What it is
 
