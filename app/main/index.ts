@@ -303,6 +303,35 @@ async function bootKernel(): Promise<void> {
   });
   ipcMain.handle("flux:missionList", async () => missions.list());
   ipcMain.handle("flux:trajectoryStats", async () => trajectoryStats());
+
+  // Fetch a GitHub/git project into a local cache dir so PCB import (and future
+  // flows) can point at it. Shallow clone; returns the local path.
+  ipcMain.handle("flux:fetchRepo", async (_evt, url: string) => {
+    const clean = url.trim().replace(/\.git$/, "").replace(/\/$/, "");
+    if (!/^https?:\/\/|git@/.test(clean)) return { ok: false, error: "not a git URL" };
+    const name = clean.split("/").pop() || "repo";
+    const dest = path.join(os.homedir(), ".flux", "projects", name);
+    const emit = (line: string): void => {
+      void bus.publish({ source: "git", kind: "log", topic: "term.output",
+        data: { line, kind: "meta" }, trace_id: "fetch-repo" });
+    };
+    return new Promise((resolve) => {
+      if (existsSync(dest)) {
+        emit(`↻ ${name} exists — pulling latest`);
+        exec(`git -C ${JSON.stringify(dest)} pull --ff-only`, { timeout: 120000 }, () =>
+          resolve({ ok: true, path: dest, name, cached: true }));
+        return;
+      }
+      emit(`⬇ cloning ${clean} …`);
+      mkdirSync(path.dirname(dest), { recursive: true });
+      exec(`git clone --depth 1 ${JSON.stringify(clean)} ${JSON.stringify(dest)}`,
+        { timeout: 180000, maxBuffer: 16 * 1024 * 1024 }, (err, _o, stderr) => {
+          if (err) { emit(`✗ ${stderr.slice(-200)}`); resolve({ ok: false, error: stderr.slice(-300) || err.message }); return; }
+          emit(`✓ cloned to ${dest}`);
+          resolve({ ok: true, path: dest, name });
+        });
+    });
+  });
   ipcMain.handle("flux:evidenceList", async () => listEvidence());
   ipcMain.handle("flux:evidenceGet", async (_evt, runId: string) => getEvidence(runId));
 

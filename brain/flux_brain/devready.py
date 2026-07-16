@@ -211,16 +211,26 @@ def compose_devready(board: str, boards_json: str, serial: str | None = None,
             ld_file = str(cand) if cand.exists() else None
 
     # ── BODY: structure & topology ──
-    pinmap = asset_store.get_asset(f"pinmap-{board}")
-    pins = (pinmap or {}).get("characterization", {}).get("pins", [])
+    # pin source: SDK pinmux (pinmap-) or a parsed PCB design (pcbmap-).
+    pinmap = asset_store.get_asset(f"pinmap-{board}") or asset_store.get_asset(f"pcbmap-{board}")
+    pin_ref = None
+    if asset_store.get_asset(f"pinmap-{board}"):
+        pin_ref = f"pinmap-{board}"
+    elif asset_store.get_asset(f"pcbmap-{board}"):
+        pin_ref = f"pcbmap-{board}"
+    pchar = (pinmap or {}).get("characterization", {})
+    pins = pchar.get("pins", [])
     body = {
         "chip": chip,
         "series": profile.get("name", ""),
         "arch": profile.get("arch", ""),
         "memory_map": parse_memory_map(ld_file),
         "boot_modes": _boot_modes(ld_dir),
-        "pinmap": {"asset_ref": f"pinmap-{board}" if pinmap else None,
-                   "pin_count": len(pins), "pins": pins},
+        "pinmap": {"asset_ref": pin_ref, "pin_count": len(pins), "pins": pins},
+        # schematic-level context from a PCB ingest (sensors/regulators the
+        # firmware talks to, and the nets they sit on).
+        "board_devices": pchar.get("board_devices", []),
+        "key_nets": pchar.get("key_nets", []),
         "debug_topology": {
             "probe": profile.get("usb", {}),
             "transport": "JTAG",

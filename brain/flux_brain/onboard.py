@@ -237,11 +237,23 @@ def _load_regmap(chip: str) -> dict[str, Any] | None:
 
 def onboard(boards_json: str, chip: str | None = None, board: str | None = None,
             vid: str | None = None, pid: str | None = None,
-            serial: str = "", uart: str | None = None) -> dict[str, Any]:
+            serial: str = "", uart: str | None = None,
+            project_dir: str | None = None) -> dict[str, Any]:
     """Full onboard: identity → profile → SVD ingest → comm test → devready
-    (serial stamped in). Works for a known board (pass board) or a fresh chip
-    (pass chip + vid/pid from scan)."""
+    (serial stamped in). Works for a known board (pass board), a fresh chip
+    (pass chip + vid/pid from scan), or a CUSTOM board (pass project_dir with
+    its .ioc/.NET design files — no vendor part needed)."""
     steps: list[dict[str, Any]] = []
+
+    # custom board: derive the profile + chip from its design files first.
+    if project_dir and not chip and not board:
+        from . import pcb_ingest
+        dz = pcb_ingest.ingest_design(project_dir, boards_json, board)
+        if "error" in dz:
+            return dz
+        board, chip = dz["board"], dz["mcu"]
+        steps.append({"step": "design", "ok": True, "asset": dz["asset_id"],
+                      "pins": dz["pin_count"], "devices": dz.get("board_devices", [])})
 
     # resolve chip from a known board if only board given
     if board and not chip:

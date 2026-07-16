@@ -3,6 +3,32 @@
   "comment": "Board profiles drive device detection, USB authorization, real-probe connect, build and pinmux ingestion. Add a board = add an entry.",
   "boards": [
     {
+      "id": "stm32l031f6px",
+      "name": "STM32L031F6Px (PCB design)",
+      "chip": "STM32L031F6Px",
+      "arch": "cortex-m0plus",
+      "usb": {
+        "vid": "0483",
+        "pid": "374b",
+        "label": "ST-Link (assumed)"
+      },
+      "uart": {
+        "dev_hint": "/dev/ttyUSB0",
+        "baud": 115200
+      },
+      "openocd": {
+        "bin": "openocd",
+        "search": "",
+        "cfgs": [
+          "interface/stlink.cfg",
+          "target/stm32l0.cfg"
+        ],
+        "flash_driver": "stm32l0 (upstream)"
+      },
+      "pcb_pinmap": "pcbmap-stm32l031f6px",
+      "source": "pcb-design"
+    },
+    {
       "id": "nucleo-h743zi2",
       "name": "ST NUCLEO-H743ZI2",
       "chip": "STM32H743ZI",

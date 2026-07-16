@@ -35,6 +35,9 @@ const api = {
   sendSetApi(config: Record<string, string>): Promise<void> {
     return ipcRenderer.invoke("flux:setApi", config);
   },
+  fetchRepo(url: string): Promise<{ ok: boolean; path?: string; name?: string; cached?: boolean; error?: string }> {
+    return ipcRenderer.invoke("flux:fetchRepo", url);
+  },
   mcpTools(): Promise<Array<{ name: string; description: string; server: string }>> {
     return ipcRenderer.invoke("flux:mcpTools");
   },

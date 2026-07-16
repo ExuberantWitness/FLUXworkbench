@@ -19,7 +19,7 @@ log = logging.getLogger("flux_insight")
 # flux_brain is editable-installed in brain/.venv; fall back to sibling path
 # so the server also works when launched with a bare python3.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flux_brain import asset_store, board_skillgen, chip_bind, codegen, devready, dts_ingest, fluxweave_core, onboard, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
+from flux_brain import asset_store, board_skillgen, chip_bind, codegen, devready, dts_ingest, fluxweave_core, onboard, pcb_ingest, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
 from flux_brain.llm_ollama import SCHEMATIC_PROMPT  # noqa: E402
 from flux_brain.llm_vllm import _data_url  # noqa: E402
 
@@ -304,7 +304,8 @@ TOOLS = [
          "board": {"type": "string", "description": "known board id (skips chip lookup)"},
          "chip": {"type": "string", "description": "exact chip model, e.g. STM32H743ZI (for a new/unknown board)"},
          "vid": {"type": "string"}, "pid": {"type": "string"},
-         "serial": {"type": "string"}, "uart": {"type": "string"}}}},
+         "serial": {"type": "string"}, "uart": {"type": "string"},
+         "project_dir": {"type": "string", "description": "custom board: dir with .ioc/.NET design files (no vendor part needed)"}}}},
     {"name": "bind_chip", "description": "6th phase: stamp the DevReady record (magic + fingerprint + live chip UID) into the MCU's non-volatile Flash, read it back to verify persistence, and write the factory UID into the devready asset — binding asset↔silicon. Requires a real probe + openocd.",
      "inputSchema": {"type": "object", "properties": {
          "board": {"type": "string", "description": "board id (must have a devready asset)"},
@@ -312,6 +313,11 @@ TOOLS = [
       "required": ["board"]}},
     {"name": "verify_chip", "description": "Real-board verification without firmware: spawn openocd, read the debug IDCODE + factory UID to confirm the silicon is alive and matches the profile. What characterization needs (no firmware HIL).",
      "inputSchema": {"type": "object", "properties": {"board": {"type": "string"}}, "required": ["board"]}},
+    {"name": "ingest_design", "description": "Extract a board's BSP from its DESIGN files (STM32CubeMX .ioc pin mux + Altium/Protel .NET netlist) for a CUSTOM board with no vendor SVD/pinmux. Produces a pin-map + schematic-knowledge asset and synthesizes a board profile. KiCad/EasyEDA on the roadmap.",
+     "inputSchema": {"type": "object", "properties": {
+         "project_dir": {"type": "string", "description": "path to the project dir containing .ioc / .NET files"},
+         "board_id": {"type": "string", "description": "optional board id (default derived from MCU)"}},
+      "required": ["project_dir"]}},
     {"name": "usage_stats", "description": "LLM token usage + routing-savings estimate (dashboard metering line). Aggregates the llm_usage table.",
      "inputSchema": {"type": "object", "properties": {
          "days": {"type": "number", "description": "Lookback window in days (default 7)"},
@@ -715,7 +721,8 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         bj = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json"))
         out = onboard.onboard(bj, chip=args.get("chip"), board=args.get("board"),
                               vid=args.get("vid"), pid=args.get("pid"),
-                              serial=args.get("serial", ""), uart=args.get("uart"))
+                              serial=args.get("serial", ""), uart=args.get("uart"),
+                              project_dir=args.get("project_dir"))
         if "error" not in out:
             log.info(f"onboarded {out['board']} ({out['chip']}) serial={out['serial'][:12]} -> {out['devready_asset']}")
         return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
@@ -728,6 +735,12 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         out = chip_bind.bind_chip(args["board"], bj, dry_run=bool(args.get("dry_run", False)))
         if out.get("verified"):
             log.info(f"bound {out['board']}: uid={out['uid']} fp={out['fingerprint']} @ {out['slot']}")
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
+    elif name == "ingest_design":
+        bj = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "boards.json"))
+        out = pcb_ingest.ingest_design(args["project_dir"], bj, args.get("board_id"))
+        if "error" not in out:
+            log.info(f"pcb ingest: {out['board']} ({out['mcu']}) {out['pin_count']} pins, devices={out.get('board_devices')}")
         return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
     elif name == "usage_stats":
         stats = asset_store.usage_stats(

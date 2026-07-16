@@ -19,6 +19,19 @@ First boot comes straight up in **mock/simulation mode** — run the guided devi
 
 > Branch **`v2`** is the active rewrite. `main` preserves the v0 toy (Python flux-runtime + vendored openwork + single-file UI) for history.
 
+## 🎬 Tutorials / 视频教程
+
+Shot-by-shot scripts for the studio's typical features (record-ready; videos land in `docs/tutorials/media/`). See the index: **[docs/tutorials/](docs/tutorials/README.md)**
+
+| # | Feature | Script |
+|---|---|---|
+| 01 | **PCB → BSP** — paste a GitHub URL, auto-extract the board-support package + interactive wiring graph | [01-pcb-to-bsp.md](docs/tutorials/01-pcb-to-bsp.md) |
+| 02 | **Device onboard** — plug in any MCU board, auto identify → profile → ingest | [02-device-onboard.md](docs/tutorials/02-device-onboard.md) |
+| 03 | **Real bring-up + chip bind** — 6-phase golden path, write a DevReady record into the chip's Flash | [03-real-bringup-and-bind.md](docs/tutorials/03-real-bringup-and-bind.md) |
+| 04 | **DevReady asset** — the self-describing `.flux` living file (pins / RTOS / memory / docs) | [04-devready-asset.md](docs/tutorials/04-devready-asset.md) |
+| 05 | **Desk-pet guide** — talk to 小Flux; it classifies intent and highlights the controls to click | [05-desk-pet-guided.md](docs/tutorials/05-desk-pet-guided.md) |
+| 06 | **One-click install** — Windows / macOS / Linux, embedded runtime | [06-install.md](docs/tutorials/06-install.md) |
+
 ## What it is
 
 A microkernel studio for physical-AI development, structured as **two cores**:

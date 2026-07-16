@@ -4,21 +4,22 @@
 import React from "react";
 import { MissionPanel } from "./MissionPanel";
 import { FluxWeavePanel } from "./FluxWeavePanel";
+import { PcbImportPanel } from "./PcbImportPanel";
 import { useLang } from "./i18n";
 
 interface FluxEvent { source?: string; kind?: string; topic: string; data: Record<string, unknown>; trace_id: string }
 
 export function AssetsPanel({ events, sub, setSub }: {
   events: FluxEvent[];
-  sub: "bringup" | "assembly";
-  setSub: (s: "bringup" | "assembly") => void;
+  sub: "bringup" | "assembly" | "pcb";
+  setSub: (s: "bringup" | "assembly" | "pcb") => void;
 }): React.ReactElement {
   const { t } = useLang();
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        {([["bringup", t("assets.bringup")], ["assembly", t("assets.assembly")]] as Array<["bringup" | "assembly", string]>).map(([k, label]) => (
-          <div key={k} data-guide={k === "bringup" ? "sub-bringup" : "sub-assembly"}
+        {([["bringup", t("assets.bringup")], ["pcb", t("assets.pcb")], ["assembly", t("assets.assembly")]] as Array<["bringup" | "assembly" | "pcb", string]>).map(([k, label]) => (
+          <div key={k} data-guide={k === "bringup" ? "sub-bringup" : k === "pcb" ? "sub-pcb" : "sub-assembly"}
             onClick={() => setSub(k)}
             style={{
               padding: "6px 16px", fontSize: 11, cursor: "pointer", fontFamily: "var(--mono)",
@@ -31,7 +32,7 @@ export function AssetsPanel({ events, sub, setSub }: {
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-        {sub === "bringup" ? <MissionPanel events={events as never} /> : <FluxWeavePanel />}
+        {sub === "bringup" ? <MissionPanel events={events as never} /> : sub === "pcb" ? <PcbImportPanel /> : <FluxWeavePanel />}
       </div>
     </div>
   );

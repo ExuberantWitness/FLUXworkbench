@@ -57,7 +57,7 @@ export function App() {
   const [problemsOpen, setProblemsOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState<"problems" | "terminal">("problems");
   // assets sub-tab lifted here so the guide engine can observe it (advance signal)
-  const [assetsSub, setAssetsSub] = useState<"bringup" | "assembly">("bringup");
+  const [assetsSub, setAssetsSub] = useState<"bringup" | "assembly" | "pcb">("bringup");
   // ── chat sessions (issue: + New Session did nothing) ──
   const [sessions, setSessions] = useState<Array<{ id: string; name: string; msgs: ChatMsg[] }>>(
     [{ id: "current", name: "Session 1", msgs: [] }]);

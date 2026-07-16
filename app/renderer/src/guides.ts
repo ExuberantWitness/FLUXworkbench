@@ -29,6 +29,17 @@ export interface Guide {
 
 export const GUIDES: Guide[] = [
   {
+    id: "pcb-bsp",
+    titleKey: "guide.pcb.title",
+    match: "我有一个PCB/硬件项目(github链接或本地文件夹)想制作BSP/板级支持包，从设计文件(.ioc/.NET/原理图/网表)提取MCU引脚外设; make BSP from a PCB project, ingest design files, custom board",
+    steps: [
+      { guide: "tab-assets", tipKey: "guide.pcb.s1", advance: { kind: "tab", tab: "assets" } },
+      { guide: "sub-pcb", tipKey: "guide.pcb.s2", advance: { kind: "subtab", sub: "pcb" } },
+      { guide: "pcb-input", tipKey: "guide.pcb.s3", advance: { kind: "click" } },
+      { guide: "pcb-ingest", tipKey: "guide.pcb.s4", advance: { kind: "event", topic: "asset.committed", where: { type: "characterization" } } },
+    ],
+  },
+  {
     id: "onboard",
     titleKey: "guide.onboard.title",
     match: "我连接/插入了一块新板子/开发板/单片机(hpm/stm32/h743/nucleo等)想让系统识别并自动建立档案+SVD寄存器资产+序列号; onboard a new/unknown MCU board, auto-detect and provision, any chip",
