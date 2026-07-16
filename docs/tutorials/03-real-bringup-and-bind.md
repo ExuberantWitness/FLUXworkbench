@@ -1,5 +1,10 @@
 # 剧本 03 — 真板调通 + 芯片烙印（六阶段黄金路径）
 
+![demo](media/03-real-bringup-and-bind.gif)
+
+> ↑ 六阶段黄金路径（真板 H743 自动录制）：识别→入库→计划→验证(IDCODE)→沉淀→烙印，全绿
+
+
 **视频文件**：`media/03-real-bringup-and-bind.mp4` · **时长**：~3min
 
 ## 一句话价值

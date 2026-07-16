@@ -1,5 +1,10 @@
 # 剧本 05 — 小Flux 向导（对话即操作，AI 带你走完流程）
 
+![demo](media/05-desk-pet-guided.gif)
+
+> ↑ 小 Flux 桌宠助手：只读、快捷入口、对话引导
+
+
 **视频文件**：`media/05-desk-pet-guided.mp4` · **时长**：~2min
 
 ## 一句话价值

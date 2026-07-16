@@ -4,11 +4,21 @@ studio 典型功能的分镜剧本 + 录制清单。每个 `.md` 是一份可照
 
 Scripts for the studio's typical features. Each `.md` is a shot-by-shot script you can record in one take; drop the recorded mp4/gif into `media/` using the filename each script specifies.
 
-### 01 · PCB → BSP（已录 / recorded）
+### 已录制的演示 / Recorded demos
 
+全部由 Playwright 驱动真实 Electron 应用自动录制（`scripts/record-demos.mjs` + `record-pcb-demo.mjs`）——真界面、真数据、真交互。
+
+**01 · PCB → BSP**：贴 GitHub 链接 → 解析设计文件 → 交互连接图（点器件看连了哪些引脚）
 ![PCB to BSP](media/01-pcb-to-bsp.gif)
 
-贴一个 GitHub 链接（`github.com/cfrpg/Vigilator`）→ 自动克隆、解析设计文件、提取 MCU/引脚/外设 → 交互连接图（点器件看它连了哪些引脚）。真实界面，Playwright 驱动 Electron 自动录制。
+**03 · 真板调通 + 烙印**：六阶段黄金路径，真板 H743，读到 IDCODE `0x20036450`，烙印写 Flash
+![real bring-up](media/03-real-bringup-and-bind.gif)
+
+**02 · 设备上机**：真实页检测 → 一键上机（识别探针+序列号+芯片，2955 寄存器入库）
+![onboard](media/02-device-onboard.gif)
+
+**04 · DevReady 资产**：详情弹窗，序列号 + 六页签（引脚/RTOS/记忆/离线资料/.flux）
+![devready](media/04-devready-asset.gif)
 
 ## 教程清单 / Tutorials
 

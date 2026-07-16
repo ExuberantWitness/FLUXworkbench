@@ -1,5 +1,10 @@
 # 剧本 04 — DevReady 资产（自描述、自包含的 .flux 活档案）
 
+![demo](media/04-devready-asset.gif)
+
+> ↑ DevReady 资产详情：序列号 + 六个页签（引脚/RTOS/记忆/离线资料/.flux）
+
+
 **视频文件**：`media/04-devready-asset.mp4` · **时长**：~2min
 
 ## 一句话价值
