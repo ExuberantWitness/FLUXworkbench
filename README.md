@@ -102,7 +102,7 @@ docs/           architecture.md + adr/* + tutorials/*
 | OS | 下载 | 运行 |
 |---|---|---|
 | **Windows** | `FluxWorkbench-<ver>-win-x64.exe` | 双击 → Next → Finish |
-| **macOS**（Apple Silicon / Intel）| `…-mac-arm64.dmg` / `…-mac-x64.dmg` | 打开 .dmg → 拖进 Applications → 首次**右键 → 打开** |
+| **macOS**（Apple Silicon）| `…-mac-arm64.dmg`（Intel 版随后补）| 打开 .dmg → 拖进 Applications → 首次**右键 → 打开** |
 | **Linux** | `…-linux-x64.AppImage`（自更新）| `chmod +x` 后双击 |
 | **Linux (Debian/Ubuntu)** | `…-linux-x64.deb` | `sudo apt install ./…deb` |
 
@@ -122,4 +122,4 @@ env -u ELECTRON_RUN_AS_NODE pnpm --filter @fluxworkbench/app build
 
 > 宿主机设了 `ELECTRON_RUN_AS_NODE` 时必须 `env -u` 掉，否则 electron 会以纯 Node 跑（`electron.app` 变 undefined）。无 GPU / 无显示时加 `--disable-gpu --no-sandbox`。`@vitejs/plugin-react` 锁 v4。
 
-发布：AppImage + deb 上 GitHub Releases，由 [`release-v2.yml`](.github/workflows/release-v2.yml) 构建；`main` 为当前活跃分支。
+发布：推一个 tag（`v*`）→ [`release.yml`](.github/workflows/release.yml) 三系统并行打包（Win `.exe` / macOS `.dmg` / Linux `.AppImage`+`.deb`）并发布到 GitHub Releases；`main` 为当前活跃分支。

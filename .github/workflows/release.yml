@@ -17,8 +17,11 @@ jobs:
             eb: "--linux"
           - os: windows-latest
             eb: "--win"
+          # macos-latest is Apple Silicon; the embedded CPython is fetched for
+          # the runner's arch, so build arm64 only. Intel dmg needs a macos-13
+          # runner + x64 python — added in a later release.
           - os: macos-latest
-            eb: "--mac"
+            eb: "--mac --arm64"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
