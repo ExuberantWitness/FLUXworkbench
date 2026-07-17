@@ -20,6 +20,9 @@ Scripts for the studio's typical features. Each `.md` is a shot-by-shot script y
 **04 · DevReady 资产**：详情弹窗，序列号 + 六页签（引脚/RTOS/记忆/离线资料/.flux）
 ![devready](media/04-devready-asset.gif)
 
+**07 · 内核调度器**：五条 RTOS 优先级带实时占用，硬件告警抢占所有低带软件任务——不是另一个 VSCode
+![kernel scheduler](media/07-kernel-scheduler.gif)
+
 ## 教程清单 / Tutorials
 
 | # | 功能 Feature | 剧本 Script | 时长 | 视频 |
@@ -30,6 +33,7 @@ Scripts for the studio's typical features. Each `.md` is a shot-by-shot script y
 | 04 | **DevReady 资产**：自描述、自包含的 `.flux` 活档案（引脚/RTOS/记忆/官方资料） | [04-devready-asset.md](04-devready-asset.md) | ~2min | `media/04-devready-asset.mp4` |
 | 05 | **小Flux 向导**：对话即操作，AI 分类意图→高亮控件带你走完流程 | [05-desk-pet-guided.md](05-desk-pet-guided.md) | ~2min | `media/05-desk-pet-guided.mp4` |
 | 06 | **跨平台一键安装**：Windows/macOS/Linux 装完即用，内嵌运行时 | [06-install.md](06-install.md) | ~1min | `media/06-install.mp4` |
+| 07 | **内核调度器**：RTOS 优先级带 + 硬件告警抢占软件任务，机制层面区别于 VSCode | [07-kernel-scheduler.md](07-kernel-scheduler.md) | ~6s | `media/07-kernel-scheduler.gif` |
 
 ## 录制约定 / Recording conventions
 
@@ -44,3 +48,4 @@ See [RECORDING.md](RECORDING.md) for resolution, tools, naming, placement, and h
 - **真板调通**：`资产 → 调通 → ▶ 开始任务`（插着真板时自动走 real + 烙印）
 - **DevReady**：`右栏资产卡片 → .flux 文件页`
 - **小Flux**：右下角桌宠输入 `我有个项目 <url> 要做 BSP`
+- **内核调度**：`点右下角状态条开总览 → ⚡ 内核调度演示`（或右栏「内核调度器」的 ▶ 运行抢占演示）

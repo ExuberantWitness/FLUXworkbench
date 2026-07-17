@@ -106,26 +106,39 @@ export class MCPOrchestrator {
   // chat (30), which preempts background asset commits (10).
   private inflight = 0;
   private readonly maxConcurrent = 2;
-  private waitq: Array<{ prio: number; seq: number; run: () => void }> = [];
+  private waitq: Array<{ prio: number; seq: number; tool: string; run: () => void }> = [];
+  // What is actually holding a slot right now, keyed by dispatch id — so the UI
+  // can render live "who is flying" per band, not just an event histogram.
+  private inflightCalls = new Map<number, { prio: number; tool: string }>();
   private dispatchSeq = 0;
   // Alarm preemption (拔线): while paused, queued calls below the floor stay queued.
   private pauseFloor = 0;
 
-  private acquire(prio: number): Promise<void> {
+  private acquire(prio: number, tool: string): Promise<number> {
+    const id = this.dispatchSeq++;
     if (prio >= this.pauseFloor && this.inflight < this.maxConcurrent) {
       this.inflight++;
-      return Promise.resolve();
+      this.inflightCalls.set(id, { prio, tool });
+      this.emitSchedulerState();
+      return Promise.resolve(id);
     }
     return new Promise((resolve) => {
-      this.waitq.push({ prio, seq: this.dispatchSeq++, run: () => { this.inflight++; resolve(); } });
+      this.waitq.push({ prio, seq: id, tool, run: () => {
+        this.inflight++;
+        this.inflightCalls.set(id, { prio, tool });
+        resolve(id);
+      } });
       this.waitq.sort((a, b) => b.prio - a.prio || a.seq - b.seq);
       this.drain();
+      this.emitSchedulerState();
     });
   }
 
-  private releaseSlot(): void {
+  private releaseSlot(id: number): void {
     this.inflight--;
+    this.inflightCalls.delete(id);
     this.drain();
+    this.emitSchedulerState();
   }
 
   private drain(): void {
@@ -138,11 +151,49 @@ export class MCPOrchestrator {
   /** Alarm preemption: hold every queued call below `priority` until resume(). */
   pauseBelow(priority: number): void {
     this.pauseFloor = priority;
+    this.emitSchedulerState();
   }
 
   resume(): void {
     this.pauseFloor = 0;
     this.drain();
+    this.emitSchedulerState();
+  }
+
+  /**
+   * Publish a live snapshot of the scheduler for the UI. This is the RTOS
+   * heartbeat — inflight/queued per priority band + the current preemption
+   * floor — so the studio can show real scheduling state, not a text log.
+   */
+  private emitSchedulerState(): void {
+    void this.bus.publish({
+      source: "kernel:scheduler",
+      kind: "measure",
+      topic: "scheduler.state",
+      data: {
+        maxConcurrent: this.maxConcurrent,
+        inflight: this.inflight,
+        pauseFloor: this.pauseFloor,
+        inflightCalls: [...this.inflightCalls.values()],
+        queued: this.waitq.map((w) => ({ prio: w.prio, tool: w.tool })),
+      },
+      trace_id: randomUUID(),
+    });
+  }
+
+  /**
+   * Scheduler demo task: occupy a real queue slot at `prio` for `ms` without
+   * hitting a server. It drives the SAME acquire → queue → preempt → release
+   * path as callTool, so the live scheduler.state reflects genuine band
+   * contention and alarm preemption — honest, not a canned animation.
+   */
+  async runDemoTask(prio: number, label: string, ms: number): Promise<void> {
+    const id = await this.acquire(prio, label);
+    try {
+      await new Promise((r) => setTimeout(r, ms));
+    } finally {
+      this.releaseSlot(id);
+    }
   }
 
   /** Call a tool by name. Routes to the owning server via the priority queue. */
@@ -153,7 +204,7 @@ export class MCPOrchestrator {
     }
 
     // LLM/vision tool calls can run for minutes — far past the 30s handshake timeout.
-    await this.acquire(priority);
+    const slot = await this.acquire(priority, toolName);
     const t0 = Date.now();
     let result: unknown;
     try {
@@ -162,7 +213,7 @@ export class MCPOrchestrator {
         arguments: args,
       }, 300_000);
     } finally {
-      this.releaseSlot();
+      this.releaseSlot(slot);
     }
 
     // Publish result as uORB event for UI + recorder (durationMs/priority feed

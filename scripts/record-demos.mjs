@@ -1,7 +1,7 @@
 // Record multiple studio flows by driving the built Electron app with
 // Playwright, screenshotting each step. Frames → (caller) ffmpeg → GIF.
 //   node scripts/record-demos.mjs <scene>
-// scenes: mission | onboard | devready | pet   (pcb has its own script)
+// scenes: mission | onboard | devready | pet | scheduler   (pcb has its own script)
 import { _electron as electron } from "playwright";
 import { mkdirSync } from "node:fs";
 import * as path from "node:path";
@@ -88,6 +88,52 @@ try {
     } else {
       await shot(page, "no-asset", 3);
     }
+
+  } else if (scene === "scheduler") {
+    // The kernel scheduler in action: real cross-band traffic on the priority
+    // queue, then a hardware alarm preempts every software task below Device(70).
+    // Proves the "not another VSCode" claim — VSCode has no such scheduler.
+    await page.setViewportSize({ width: 1200, height: 900 }).catch(() => {});
+    // Collect the live scheduler.state stream so we can ASSERT preemption really
+    // happened (a Device(70) task flying while a band-30 task is frozen queued).
+    await page.evaluate(() => {
+      window.__sched = [];
+      window.flux?.onEvent?.((e) => { if (e.topic === "scheduler.state") window.__sched.push(e.data); });
+    });
+    // Open the flywheel dashboard modal (900px) — SchedulerViz sits at the top,
+    // all five bands visible without scrolling.
+    await page.locator(".pet-stats").first().click({ force: true });
+    await page.waitForTimeout(900);
+    // Tight element crop of the scheduler viz inside the modal.
+    const viz = page.locator(".asset-modal [data-viz='scheduler']").first();
+    await viz.waitFor({ timeout: 8000 });
+    const box = await viz.boundingBox();
+    // Pad the crop a little so the border/shadow isn't shaved.
+    const clip = box ? { x: Math.max(0, box.x - 6), y: Math.max(0, box.y - 6), width: box.width + 12, height: box.height + 12 } : undefined;
+    console.log("  viz box:", JSON.stringify(box));
+    const frame = async () => {
+      await page.screenshot({ path: path.join(OUT, `f${String(n++).padStart(3, "0")}.png`), clip, animations: "allow", timeout: 8000 }).catch(() => {});
+    };
+    // A few idle frames so the GIF opens at rest, then fire the demo and sample
+    // the arc against a REAL-TIME budget (screenshot latency accumulates, so a
+    // fixed frame count would drift past the fast phases). Stop before the long
+    // background-drain tail.
+    for (let i = 0; i < 3; i++) { await frame(); await page.waitForTimeout(140); }
+    // Fire-and-forget: the IPC handler awaits the whole demo (~7.5s of sleeps),
+    // so we must NOT return its promise from evaluate or capture would block
+    // until the demo already finished. Block-body arrow → resolves immediately.
+    await page.evaluate(() => { void window.flux?.schedulerDemo?.(); });
+    const start = Date.now();
+    while (Date.now() - start < 7200) { await frame(); await page.waitForTimeout(90); }
+    console.log(`  scheduler: sampled ${n} frames over the ${((Date.now() - start) / 1000).toFixed(1)}s arc`);
+    // Assert the RTOS behaviour actually occurred in the real scheduler.
+    const snaps = await page.evaluate(() => window.__sched ?? []);
+    const preempted = snaps.some((s) =>
+      s.pauseFloor === 70 &&
+      (s.inflightCalls ?? []).some((c) => c.prio === 70) &&
+      (s.queued ?? []).some((c) => c.prio < 70));
+    console.log(`  scheduler: ${snaps.length} live snapshots; preemption observed = ${preempted}`);
+    if (!preempted) console.error("  WARN: no snapshot showed Device(70) flying while a lower band was frozen");
 
   } else if (scene === "pet") {
     // Desk pet lives in the bottom-right dock (.pet-dock); the emoji span opens it.

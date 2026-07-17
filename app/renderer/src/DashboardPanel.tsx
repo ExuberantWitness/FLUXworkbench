@@ -4,6 +4,7 @@
 // evidence/bench lists. Everything is read live from the asset store.
 import React, { useEffect, useMemo, useState } from "react";
 import { useLang } from "./i18n";
+import { SchedulerViz, type SchedulerState } from "./SchedulerViz";
 
 interface FluxEvent { topic: string; data: Record<string, unknown>; trace_id: string }
 
@@ -49,7 +50,7 @@ function Curve({ values, labels, color, unit, height = 120 }: {
   );
 }
 
-export function DashboardPanel({ events }: { events: FluxEvent[] }): React.ReactElement {
+export function DashboardPanel({ events, schedState }: { events: FluxEvent[]; schedState?: SchedulerState | null }): React.ReactElement {
   const { t } = useLang();
   const [missions, setMissions] = useState<MissionAsset[]>([]);
   const [bench, setBench] = useState<BenchAsset[]>([]);
@@ -61,6 +62,7 @@ export function DashboardPanel({ events }: { events: FluxEvent[] }): React.React
       mcpCall(tool: string, args: Record<string, unknown>): Promise<string>;
       trajectoryStats(): Promise<{ missions: number; lines: number }>;
       alarmDemo?(): Promise<void>;
+      schedulerDemo?(): Promise<void>;
     };
   }).flux;
 
@@ -133,8 +135,13 @@ export function DashboardPanel({ events }: { events: FluxEvent[] }): React.React
           )}
         </div>
         <button data-guide="alarm-demo" className="chat-send" style={{ marginLeft: 12 }} title={t("dash.alarmTip")}
-          onClick={() => void flux.alarmDemo?.()}>⚡ {t("dash.alarmBtn")}</button>
+          onClick={() => void flux.schedulerDemo?.()}>⚡ {t("dash.alarmBtn")}</button>
       </div>
+
+      {/* Live kernel scheduler — the RTOS heart that makes this "not another VSCode". */}
+      <SchedulerViz state={schedState ?? null}
+        onDemo={() => void flux.schedulerDemo?.()}
+        demoLabel={t("dash.schedDemo")} />
 
       {/* Curves appear once there is data — empty charts sell nothing. */}
       {missions.length === 0 ? (

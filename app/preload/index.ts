@@ -105,6 +105,10 @@ const api = {
   alarmClear(): Promise<void> {
     return ipcRenderer.invoke("flux:alarmClear");
   },
+  // ── kernel scheduler demo (内核调度演示: 真实抢占) ──
+  schedulerDemo(): Promise<void> {
+    return ipcRenderer.invoke("flux:schedulerDemo");
+  },
   // ── PhysicalDevBench ──
   benchRun(taskIds?: string[], presets?: string[]): Promise<Array<Record<string, unknown>>> {
     return ipcRenderer.invoke("flux:benchRun", taskIds, presets);

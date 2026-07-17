@@ -42,10 +42,11 @@ function tabOfStep(g: Guide, i: number): string | null {
   return null;
 }
 
-export function PetAssistant({ events, centerTab, assetsSub }: {
+export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
   events: FluxEvent[];
   centerTab: string;
   assetsSub: string;
+  schedState?: unknown;
 }): React.ReactElement {
   const { t, lang } = useLang();
   const activeTab = centerTab; // used in the read-only Q&A context string
@@ -443,7 +444,7 @@ export function PetAssistant({ events, centerTab, assetsSub }: {
               <button className="ft-btn" style={{ marginLeft: "auto" }} onClick={() => setShowDash(false)}>✕</button>
             </div>
             <div style={{ height: "68vh", overflow: "auto" }}>
-              <DashboardPanel events={events as never} />
+              <DashboardPanel events={events as never} schedState={schedState as never} />
             </div>
           </div>
         </div>

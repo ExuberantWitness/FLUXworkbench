@@ -97,6 +97,7 @@ const MIRROR_TOPICS = [
   "training.started", "training.progress", "training.metrics",
   "training.finished", "training.error", "training.log",
   "install.progress", "mission.milestone", "term.output",
+  "scheduler.state",
 ];
 
 async function mirrorEventsToRenderer(): Promise<void> {
@@ -364,6 +365,47 @@ async function bootKernel(): Promise<void> {
       source: "kernel", kind: "execute", topic: "alarm.cleared",
       data: { note: "operator resume" }, trace_id: `alarm-${Date.now()}`,
     });
+  });
+
+  // ── Scheduler demo (内核调度演示): generate real cross-band traffic against
+  // the SAME priority queue callTool uses, then fire a hardware alarm mid-flight.
+  // Low-priority work (agent/build/asset/background) freezes at the preemption
+  // floor while Device(70) tasks jump the queue — this is what makes us not a
+  // text editor: the kernel schedules by physical priority, not FIFO. Every
+  // beat lands in the event JSONL, so the demo is itself replayable evidence.
+  let schedulerDemoRunning = false;
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+  ipcMain.handle("flux:schedulerDemo", async () => {
+    if (schedulerDemoRunning) return;
+    schedulerDemoRunning = true;
+    // Priority bands: Device=70, Hil=50, Agent/Build/Asset=30, Background=10.
+    // Durations are chosen so each visual phase dwells long enough to be seen
+    // (and screenshot-recorded) — not a canned animation, real queue occupancy.
+    const bg = () => { void mcp.runDemoTask(10, "index.telemetry", 6500); void mcp.runDemoTask(10, "corpus.flush", 6500); };
+    const mid = () => { void mcp.runDemoTask(50, "hil.step", 2000); void mcp.runDemoTask(30, "agent.reason", 2200); void mcp.runDemoTask(30, "build.compile", 6500); void mcp.runDemoTask(30, "asset.commit", 6500); };
+    try {
+      // 1. Fill the queue with low/mid-priority work: 2 fly, the rest wait.
+      mid(); bg();
+      await sleep(1600);
+      // 2. Hardware alarm: probe-loss. Freezes everything below Device(70).
+      await bus.publish({
+        source: "physical", kind: "error", topic: "alarm.critical",
+        data: { source: "physical", code: "probe-loss", message: "debug probe disconnected — device band preempts (内核调度演示)" },
+        trace_id: `sched-${Date.now()}`,
+      });
+      // 3. Device-band work arrives and jumps ahead of the frozen queue.
+      void mcp.runDemoTask(70, "device.attach", 3600);
+      void mcp.runDemoTask(70, "rt.control-loop", 3600);
+      await sleep(4400);
+      // 4. Operator clears the alarm — the frozen bands resume draining.
+      await bus.publish({
+        source: "kernel", kind: "execute", topic: "alarm.cleared",
+        data: { note: "operator resume" }, trace_id: `sched-${Date.now()}`,
+      });
+      await sleep(1500);
+    } finally {
+      schedulerDemoRunning = false;
+    }
   });
 
   ipcMain.handle("flux:hilGenerate", async (_evt, goal: string, opts?: { chip?: string; board?: string; backend?: string }) => {

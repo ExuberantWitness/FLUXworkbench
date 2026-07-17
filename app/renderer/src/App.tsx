@@ -5,6 +5,7 @@ import { ProblemsPanel } from "./ProblemsPanel";
 import { UnitPortPanel } from "./UnitPortPanel";
 import { AssetsPanel } from "./AssetsPanel";
 import { DashboardPanel } from "./DashboardPanel";
+import { SchedulerViz, type SchedulerState } from "./SchedulerViz";
 import { TerminalPanel } from "./TerminalPanel";
 import { CodeView } from "./CodeView";
 import { PipelineViz } from "./PipelineViz";
@@ -36,6 +37,7 @@ const PROVIDER_PRESETS: Record<string, { endpoint: string; model: string; label:
 export function App() {
   const { t } = useLang();
   const [events, setEvents] = useState<FluxEvent[]>([]);
+  const [schedState, setSchedState] = useState<SchedulerState | null>(null);
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [leftTab, setLeftTab] = useState<LeftTab>("explorer");
@@ -73,6 +75,9 @@ export function App() {
 
   useEffect(() => {
     const off = window.flux?.onEvent?.((e: FluxEvent) => {
+      // scheduler.state is a high-frequency live snapshot — keep it OUT of the
+      // 200-entry ring (it would flush everything else) and hold only the latest.
+      if (e.topic === "scheduler.state") { setSchedState(e.data as unknown as SchedulerState); return; }
       setEvents((p) => [...p.slice(-200), e]);
       if (e.topic === "agent.event" && e.data?.["step"] === "chat") {
         const reply = String(e.data?.["reply"] ?? "(no reply)");
@@ -388,12 +393,12 @@ export function App() {
         )}
       </main>
       <RightPanel events={events} state={state} fluxAssets={fluxAssets}
-        rawEvents={events} wsLabel={wsLabel} mcpServers={mcpServers} onOpenAsset={setDetailAsset} />
+        rawEvents={events} wsLabel={wsLabel} mcpServers={mcpServers} onOpenAsset={setDetailAsset} schedState={schedState} />
       <Footer state={state} osInfo={osInfo} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
       {detailAsset && <AssetDetail asset={detailAsset} projectPath={projectPath} onClose={() => setDetailAsset(null)}
         onDeleted={() => { void window.flux?.mcpCall?.("query_asset", {}).then((tx: string) => { const a = JSON.parse(tx); if (Array.isArray(a)) setFluxAssets(a); }); }}
         revealInExplorer={(p: string) => { const dir = p.substring(0, p.lastIndexOf("/")); const home = "/home/exuber"; setProjectPath(home + dir); setLeftTab("explorer"); }} />}
-      <PetAssistant events={events} centerTab={centerTab} assetsSub={assetsSub} />
+      <PetAssistant events={events} centerTab={centerTab} assetsSub={assetsSub} schedState={schedState} />
       {ctxMenu && <ContextMenu ctxMenu={ctxMenu} closeCtx={closeCtx} refreshTree={refreshTree}
         doDelete={doDelete} copyPath={copyPath} copyRelPath={copyRelPath} addToChat={addToChat}
         setCreating={setCreating} projectPath={projectPath}
@@ -687,22 +692,8 @@ function Fold({ title, defaultOpen = true, extra, children }: any) { // eslint-d
 
 function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const { t } = useLang();
-  const { events, state, fluxAssets, rawEvents, mcpServers, onOpenAsset } = props;
+  const { events, state, fluxAssets, rawEvents, mcpServers, onOpenAsset, schedState } = props;
   const assets = events.filter((e: FluxEvent) => e.topic === "asset.committed");
-
-  const topics = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const e of rawEvents) { counts[e.topic] = (counts[e.topic] || 0) + 1; }
-    return counts;
-  }, [rawEvents]);
-  const maxTopic = Math.max(1, ...Object.values(topics));
-  const priorityBands = [
-    { name: "alarm", level: 90, color: "#ff4444", count: (topics["alarm.critical"] || 0) + (topics["alarm.policy-violation"] || 0) },
-    { name: "device", level: 70, color: "#ff8800", count: (topics["device.attached"] || 0) + (topics["openocd.event"] || 0) },
-    { name: "build", level: 30, color: "#002FA7", count: (topics["build.progress"] || 0) },
-    { name: "agent", level: 30, color: "#5B7BFF", count: (topics["agent.event"] || 0) + (topics["cmd.chat"] || 0) },
-    { name: "asset", level: 30, color: "#00aa44", count: (topics["asset.committed"] || 0) + (topics["workflow.published"] || 0) },
-  ];
 
   // Software modules: everything the kernel can schedule that is NOT a
   // physical probe — with what each one is allowed to touch.
@@ -724,19 +715,8 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
       {/* ── the dev flow, visualized (merged Overview + Insight Loop) ── */}
       <Fold title={t("rp.pipeline")}>
         <PipelineViz events={rawEvents} />
-        <div className="infra-block" style={{ marginTop: 6 }}>
-          <div className="infra-label">Priority Bands</div>
-          <div className="priority-bars">
-            {priorityBands.map((b) => (
-              <div key={b.name} className="pbar-row">
-                <div className="pbar-name" style={{ color: b.color }}>{b.level}</div>
-                <div className="pbar-track">
-                  <div className="pbar-fill" style={{ width: `${Math.max(2, (b.count / maxTopic) * 100)}%`, background: b.color }} />
-                  <span className="pbar-text">{b.name} ({b.count})</span>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div style={{ marginTop: 6 }}>
+          <SchedulerViz state={schedState ?? null} onDemo={() => void window.flux?.schedulerDemo?.()} />
         </div>
       </Fold>
 

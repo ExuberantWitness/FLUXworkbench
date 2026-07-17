@@ -25,25 +25,31 @@ First boot comes straight up in **mock/simulation mode** — run the guided devi
 
 All demos below are recorded by driving the real Electron app with Playwright — real UI, real data, real interaction.
 
+### ⭐ 07 · 内核调度器 — 为什么不是另一个 VSCode　[剧本](docs/tutorials/07-kernel-scheduler.md)
+五条 RTOS 优先级带的**实时占用**：低优先级软件任务在跑，硬件告警一响（探针失联），Device 带插队先跑、Agent/构建/资产/后台**全部冻结变红**，告警解除再恢复。VSCode 把命令 FIFO 跑完、没有优先级；这里是**内核调度机制本身**不同——硬件事件抢占软件任务，「硬件不等人」。数据源是内核实发的 `scheduler.state`，非预录动画。
+![kernel scheduler demo](docs/tutorials/media/07-kernel-scheduler.gif)
+
 ### 01 · PCB → BSP　[剧本](docs/tutorials/01-pcb-to-bsp.md)
 贴一个 GitHub 链接 → 自动克隆、解析设计文件（.ioc + 网表）→ 提取 MCU/引脚/外设 → 交互连接图（点器件看它连了哪些引脚）。
 ![PCB to BSP demo](docs/tutorials/media/01-pcb-to-bsp.gif)
-
-### 03 · 真板调通 + 芯片烙印　[剧本](docs/tutorials/03-real-bringup-and-bind.md)
-一个按钮，六阶段：识别→入库→计划→验证→沉淀→烙印。真板 NUCLEO-H743，读到 IDCODE `0x20036450`，把 DevReady 记录烙进芯片 Flash。
-![real bring-up + bind](docs/tutorials/media/03-real-bringup-and-bind.gif)
 
 ### 02 · 设备上机　[剧本](docs/tutorials/02-device-onboard.md)
 真实页检测 → ⚡一键上机：识别探针 + 读序列号 + 找芯片 + 拉寄存器手册（2955 寄存器入库）+ 序列号写进资产。
 ![device onboard](docs/tutorials/media/02-device-onboard.gif)
 
+### 03 · 真板调通 + 芯片烙印　[剧本](docs/tutorials/03-real-bringup-and-bind.md)
+一个按钮，六阶段：识别→入库→计划→验证→沉淀→烙印。真板 NUCLEO-H743，读到 IDCODE `0x20036450`，把 DevReady 记录烙进芯片 Flash。
+![real bring-up + bind](docs/tutorials/media/03-real-bringup-and-bind.gif)
+
 ### 04 · DevReady 资产　[剧本](docs/tutorials/04-devready-asset.md)
 每块调通的板子沉淀成一个自描述 `.flux` 活档案：引脚 / RTOS / 调试记忆 / 官方资料 / 生命记录。
 ![DevReady asset](docs/tutorials/media/04-devready-asset.gif)
 
-### 05 · 小Flux 助手　[剧本](docs/tutorials/05-desk-pet-guided.md) · 06 · [一键安装](docs/tutorials/06-install.md)
+### 05 · 小Flux 助手　[剧本](docs/tutorials/05-desk-pet-guided.md)
 右下角桌宠：对话即操作，分类你的意图，高亮该点的控件带你走完流程。
 ![desk pet](docs/tutorials/media/05-desk-pet-guided.gif)
+
+> **06 · 跨平台一键安装** — [剧本](docs/tutorials/06-install.md)（Windows/macOS/Linux 内嵌运行时，装完即用；此条为纯操作流程，暂未录 GIF）
 
 ## What it is
 

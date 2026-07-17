@@ -125,8 +125,9 @@ const dict: Record<string, { en: string; zh: string }> = {
   "dash.benchEmpty": { en: "no bench runs yet — run one from the Bench button or flux:benchRun", zh: "暂无跑分——用 benchRun 跑一轮矩阵" },
   "dash.evidence": { en: "Verified runs (replayable)", zh: "已验证运行（可重放）" },
   "dash.evidenceEmpty": { en: "no evidence yet — every HIL run will land here", zh: "暂无证据包——每次 HIL 运行都会落在这里" },
-  "dash.alarmBtn": { en: "Safety preempt demo", zh: "安全抢占演示" },
-  "dash.alarmTip": { en: "fires alarm.critical: agent calls below Device band freeze until resume", zh: "触发 alarm.critical：低于 Device 带的调用冻结直到恢复" },
+  "dash.alarmBtn": { en: "Scheduler preempt demo", zh: "内核调度演示" },
+  "dash.alarmTip": { en: "generates real cross-band traffic, then a hardware alarm preempts every task below the Device band", zh: "生成真实跨优先级流量，再由硬件告警抢占所有低于 Device 带的任务" },
+  "dash.schedDemo": { en: "▶ Run preempt demo", zh: "▶ 运行抢占演示" },
   // Alarm banner
   "alarm.banner": { en: "⚠ ALARM — low-band tool calls preempted", zh: "⚠ 告警——低优先级工具调用已被抢占" },
   "alarm.resume": { en: "Resume", zh: "恢复" },
