@@ -1,4 +1,4 @@
-# 剧本 07 — 内核调度器（RTOS 优先级抢占，不是另一个 VSCode）
+# 剧本 07 — 实时内核调度（Agent 与硬件同为一等公民）
 
 ![kernel scheduler demo](media/07-kernel-scheduler.gif)
 
@@ -8,7 +8,7 @@
 
 ## 一句话价值 / Hook
 
-> VSCode 把命令按点击顺序 FIFO 跑完，没有优先级概念。Flux Workbench 的内核不同：每个任务在一条 RTOS 式优先级队列里占槽位，**硬件告警（探针失联/过流）会抢占所有低于 Device 带的软件任务**。这不是 UI 皮肤——是调度机制本身就和编辑器不一样。「硬件不等人。」
+> 物理世界的事件有硬实时约束——过流、探针失联必须立刻处理。所以物理开发的底座应该是一个**实时内核**：每个任务在一条 RTOS 式优先级队列里占槽位，**硬件告警会抢占所有低于 Device 带的软件任务**。Agent 推理和硬件驱动在同一个内核里被调度，硬件永远优先。「硬件不等人。」
 
 ## 前置准备 / Setup
 
@@ -26,15 +26,15 @@
 | 4 | **⚡ 探针失联 probe-loss** 横幅+红标 | "现在硬件告警——调试探针被拔了。" | 顶部「⚡ 抢占线 70」红标；Alarm 带亮红闪烁 |
 | 5 | **Device 带插队 + 低带冻结** | "看：Device 带的 `device.attach`、`rt.control-loop` 插队先跑；Agent/构建/资产、后台**全部冻结变红**——硬件优先。" | 70 带两个橙色任务在飞；30/10 带 ❄ 红虚线「冻结·硬件优先」 |
 | 6 | 告警解除 | "告警一解除，冻结的队列继续排。" | 抢占线消失，30 带 `build.compile`/`asset.commit` 恢复飞 |
-| 7 | 收尾 | "同样一批任务，VSCode 只会按点击顺序跑完。内核调度机制不同，才配叫机器人开发的操作系统。" | 回到排队/空闲 |
+| 7 | 收尾 | "Agent 推理、硬件驱动、构建、遥测，全在同一个内核里按物理优先级被调度。这一层，就是物理开发缺的操作系统。" | 回到排队/空闲 |
 
 ## 关键台词（英文字幕版）
 
 - "This is the kernel scheduler — five priority bands, two slots flying at most."
-- "High priority flies first, the rest queue. That's priority scheduling, not FIFO."
+- "High priority flies first, the rest queue. That's priority scheduling with bounded concurrency."
 - "A hardware alarm fires — the debug probe was pulled."
 - "The Device band jumps the queue; every software task below it freezes. Hardware first."
-- "VSCode would just run these in click order. Different kernel — that's the point."
+- "Agent reasoning and hardware drivers, scheduled in one kernel by physical priority. That's the operating system physical development was missing."
 
 ## 可复现验证（录制前自测通过）
 
@@ -59,11 +59,14 @@ env -u ELECTRON_RUN_AS_NODE node scripts/record-demos.mjs scheduler
 - 演示任务是真实占用队列的空转任务（`runDemoTask`），与真实 `callTool` 走同一条调度路径
 - 可视化数据源：内核发布的 `scheduler.state`（inflight/queued/pauseFloor），非事件直方图、非预录动画
 
-## 这跟 VSCode 到底哪不一样
+## 第一性原理：为什么底座是内核
 
-| | VSCode | Flux Workbench |
-|---|---|---|
-| 任务模型 | 命令 = 一次性回调 | 任务 = 调度器里的 `Task`，带优先级/隔离/依赖 |
-| 排序 | 按触发顺序（FIFO/事件循环） | 优先级带 + 有界并发 + 依赖门控 |
-| 硬件事件 | 和普通命令同级 | Alarm/Device 带**抢占**软件任务（"硬件不等人"） |
-| 可观测 | 无调度状态 | `scheduler.state` 实时可视化 + 落 JSONL 可重放 |
+物理开发的底座要满足三条硬约束，缺一条就撑不住：
+
+| 约束 | 内核的做法 |
+|---|---|
+| **硬件事件不能等** | Alarm/Device 带**抢占**低优先级软件任务；`alarm.critical → pauseBelow(70)` |
+| **任务不是一次性回调** | 每个动作是调度器里的 `Task`，带优先级 / 隔离 / 依赖门控 |
+| **调度过程要可观测、可复盘** | `scheduler.state` 实时可视化 + 全程落 JSONL，可重放成证据 |
+
+一句话：能读原理图、能调工具、能记住一块板的 Agent 已经就位，缺的是一个能把它和硬件放在一起、按物理优先级调度的底座。这一层就是内核。

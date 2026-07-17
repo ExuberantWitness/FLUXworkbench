@@ -50,7 +50,7 @@ export function SchedulerViz({ state, onDemo, demoLabel }: {
       {/* header: what the scheduler is + live slot / preemption state */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: "1px solid var(--border)", background: "var(--grey-1, rgba(0,0,0,.03))" }}>
         <span style={{ fontSize: 13, fontWeight: 800 }}>🧬 {zh ? "内核调度器" : "Kernel scheduler"}</span>
-        <span style={{ fontSize: 10.5, color: "var(--grey-3)" }}>{zh ? "RTOS 优先级抢占 · 非 FIFO" : "RTOS priority preemption · not FIFO"}</span>
+        <span style={{ fontSize: 10.5, color: "var(--grey-3)" }}>{zh ? "RTOS 优先级抢占 · 有界并发" : "RTOS priority preemption · bounded concurrency"}</span>
         <span style={{ marginLeft: "auto", fontSize: 11, fontFamily: "var(--mono, monospace)", color: "var(--grey-3)" }}>
           {zh ? "槽位" : "slots"} <b style={{ color: "var(--ink)" }}>{s.inflight}/{s.maxConcurrent}</b>
         </span>
@@ -120,11 +120,11 @@ export function SchedulerViz({ state, onDemo, demoLabel }: {
         })}
       </div>
 
-      {/* one-line contrast: why this isn't a text editor */}
+      {/* first-principle: why the substrate is a real-time kernel */}
       <div style={{ padding: "7px 12px", fontSize: 10.5, color: "var(--grey-3)", lineHeight: 1.5 }}>
         {zh
-          ? "VSCode：命令按点击顺序 FIFO 执行，无优先级。Flux：任务按物理优先级抢占——硬件告警冻结所有软件任务，设备事件插队先跑。硬件不等人。"
-          : "VSCode runs commands FIFO with no priority. Flux preempts by physical priority — a hardware alarm freezes every software task and device events jump the queue. Hardware doesn't wait."}
+          ? "实时内核：任务按物理优先级调度，有限槽位。硬件告警冻结软件任务，设备事件抢占先跑——硬件不等人。"
+          : "A real-time kernel: tasks scheduled by physical priority in bounded slots. A hardware alarm freezes software tasks and device events preempt to run first — hardware doesn't wait."}
       </div>
     </div>
   );
