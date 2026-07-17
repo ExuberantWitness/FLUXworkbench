@@ -1,14 +1,16 @@
 name: Release
 
-# One-click installers for all three OSes. Push a tag like v0.2.0 → three
-# runners build in parallel → artifacts published to a GitHub Release.
+# One-click installers for all three OSes. Push a tag like v0.2.0 →
+#   build (matrix, parallel): embed python → build → smoke → package (no publish)
+#     → upload each OS's installers as artifacts
+#   publish (single job): download all artifacts → ONE GitHub Release upload.
+# The single-writer publish avoids the electron-builder race where 3 legs
+# publishing concurrently to the same release drop each other's assets.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch: {}
 
-# electron-builder --publish always creates/uploads the GitHub Release; the
-# default GITHUB_TOKEN is read-only unless we grant write here.
 permissions:
   contents: write
 
@@ -60,11 +62,53 @@ jobs:
           if [ -f dist-python/python/python.exe ]; then PY="dist-python/python/python.exe"; else PY="dist-python/python/bin/python3"; fi
           "$PY" scripts/smoke_flux_insight.py "$PY"
 
-      # electron-builder publishes to the tag's GitHub Release.
-      - name: Package + publish
+      # Build the installers but DO NOT publish — a single downstream job does
+      # that once, so concurrent legs can't clobber each other's uploads.
+      - name: Package (no publish)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.eb }} --publish never
+        shell: bash
+
+      - name: Upload installers as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List collected assets
+        run: ls -la dist
+
+      # Single writer → deterministic release. Create the release with all
+      # assets; if the tag already has one (re-run), upload/clobber instead.
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS stays unsigned (no Apple Developer account); skip notarization.
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder ${{ matrix.eb }} --publish always
-        shell: bash
+        run: |
+          set -e
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Flux Workbench $GITHUB_REF_NAME — one-click installers (Windows .exe / macOS arm64 .dmg / Linux .AppImage + .deb). The app bundles its own Python runtime; users install nothing."
+          fi
