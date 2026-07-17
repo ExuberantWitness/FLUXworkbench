@@ -51,6 +51,15 @@ jobs:
       - name: Build renderer + main
         run: pnpm -r build
 
+      # Prove the AI backend actually starts under THIS OS's embedded python
+      # (numpy baked in, imports resolve) before we ship an installer. Runs
+      # natively on windows/macOS/linux — the real Windows runtime check.
+      - name: Smoke — embedded flux-insight lists chat
+        shell: bash
+        run: |
+          if [ -f dist-python/python/python.exe ]; then PY="dist-python/python/python.exe"; else PY="dist-python/python/bin/python3"; fi
+          "$PY" scripts/smoke_flux_insight.py "$PY"
+
       # electron-builder publishes to the tag's GitHub Release.
       - name: Package + publish
         env:
