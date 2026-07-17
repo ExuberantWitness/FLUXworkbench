@@ -264,10 +264,26 @@ async function bootKernel(): Promise<void> {
   // so the user just types intent — no dropdowns. Explicit opts (from tools)
   // still win. Determinism first (device present → real), natural-language
   // overrides second ("simulate"/"仿真" → sim, "mock"/"dry" → mock).
+  // USB inventory normalized to "ID vvvv:pppp" lines so every consumer's
+  // regex works on all OSes. linux: lsusb verbatim; win32: PowerShell PnP
+  // instance IDs (USB\VID_0483&PID_374E\…) reshaped to the same form.
+  const usbInventory = (): Promise<string> => new Promise((res) => {
+    if (process.platform === "win32") {
+      exec(`powershell -NoProfile -Command "Get-PnpDevice -PresentOnly | Select-Object -ExpandProperty InstanceId"`,
+        { timeout: 15000 }, (_e, o) => {
+          const ids = [...String(o ?? "").matchAll(/USB\\VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})/g)]
+            .map((m) => `ID ${m[1]!.toLowerCase()}:${m[2]!.toLowerCase()}`);
+          res([...new Set(ids)].join("\n"));
+        });
+    } else {
+      exec("lsusb", (_e, o) => res(o ?? ""));
+    }
+  });
+
   const resolveMission = async (goal: string, opts: GoldenPathOpts): Promise<GoldenPathOpts & { why?: string }> => {
     if (opts.board && opts.backend) return opts; // fully specified — respect it
     const boards = loadBoards();
-    const lsusb: string = await new Promise((res) => exec("lsusb", (_e, o) => res(o ?? "")));
+    const lsusb: string = await usbInventory();
     const present = boards.filter((b) => new RegExp(`ID\\s+${b["usb"]?.vid}:${b["usb"]?.pid}`, "i").test(lsusb));
     const g = goal.toLowerCase();
     // board: goal-named board wins, else the single plugged-in board, else first
@@ -313,6 +329,48 @@ async function bootKernel(): Promise<void> {
   });
   ipcMain.handle("flux:missionList", async () => missions.list());
   ipcMain.handle("flux:trajectoryStats", async () => trajectoryStats());
+
+  // ── 现场快照 (scene snapshot): one click captures the last N minutes ──
+  // Everything a maintainer needs to debug a field report — what the user said
+  // (chat + pet transcripts ride in as extra), every bus/tool event from the
+  // JSONL recorder, and the system fingerprint — into ONE portable JSON file.
+  // OS-independent by construction: pure JSON, no paths/binaries, keys redacted.
+  ipcMain.handle("flux:sceneDump", async (_evt, extra?: { minutes?: number; note?: string; petLog?: unknown[]; chat?: unknown[]; provider?: string; model?: string }) => {
+    const mins = extra?.minutes ?? 10;
+    const scene = {
+      schema: "flux.scene/v1",
+      created: new Date().toISOString(),
+      app: { version: app.getVersion(), packaged: app.isPackaged },
+      system: { platform: process.platform, arch: process.arch, os_release: os.release(), locale: app.getLocale() },
+      llm: { provider: extra?.provider ?? "", model: extra?.model ?? "" },
+      note: extra?.note ?? "",
+      pet_chat: extra?.petLog ?? [],
+      chat: extra?.chat ?? [],
+      window_minutes: mins,
+      events: recorder.queryEvents({ sinceTs: Date.now() - mins * 60_000 }),
+    };
+    // defense-in-depth: strip any credential-looking field that slipped through
+    const json = JSON.stringify(scene, (k, v) => (/api[_-]?key|authorization|password|token/i.test(k) ? "[redacted]" : v), 2);
+    const dir = path.join(process.env["FLUX_HOME"] ?? path.join(os.homedir(), ".flux"), "scenes");
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `flux-scene-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    writeFileSync(file, json);
+    shell.showItemInFolder(file); // land the user right on the file to attach
+    return { file, events: scene.events.length };
+  });
+  ipcMain.handle("flux:sceneLoad", async () => {
+    const r = await dialog.showOpenDialog({
+      title: "Import Flux scene", properties: ["openFile"],
+      filters: [{ name: "Flux scene", extensions: ["json"] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    try {
+      const scene = JSON.parse(readFileSync(r.filePaths[0], "utf8"));
+      return scene?.schema === "flux.scene/v1" ? scene : { error: "not a flux.scene/v1 file" };
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+  });
 
   // Fetch a GitHub/git project into a local cache dir so PCB import (and future
   // flows) can point at it. Shallow clone; returns the local path.
@@ -485,13 +543,15 @@ async function bootKernel(): Promise<void> {
   // Detect: which board profiles match a currently-plugged debugger, and is
   // the USB node writable (else authorization is needed).
   ipcMain.handle("flux:deviceStatus", async () => {
-    const lsusb: string = await new Promise((res) => exec("lsusb", (_e, o) => res(o ?? "")));
+    const lsusb: string = await usbInventory();
     return loadBoards().map((b) => {
       const vid = b["usb"]?.vid, pid = b["usb"]?.pid;
       const re = new RegExp(`ID\\s+${vid}:${pid}`, "i");
       const present = re.test(lsusb);
       return { id: b["id"], name: b["name"], chip: b["chip"], vid, pid, present };
-    });
+    })
+      // plugged-in boards first — the user's actual board tops the list
+      .sort((a, b) => Number(b.present) - Number(a.present));
   });
 
   // Authorize: install a udev rule via pkexec (graphical password prompt), so

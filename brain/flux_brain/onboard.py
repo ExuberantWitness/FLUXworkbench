@@ -102,6 +102,31 @@ def scan(boards_json: str | None = None) -> list[dict[str, Any]]:
             "known_chip": known.get(key, {}).get("chip"),
         }
         out.append(entry)
+    # Windows has no /sys/bus/usb — enumerate present USB devices via
+    # PowerShell PnP instance IDs (USB\VID_0483&PID_374E\<serial>) instead.
+    if not out and os.name == "nt":
+        import subprocess
+        try:
+            ps = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-PnpDevice -PresentOnly | Select-Object -ExpandProperty InstanceId"],
+                capture_output=True, text=True, timeout=20)
+            seen = set()
+            for m in re.finditer(r"USB\\VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})(?:\\([^\s\\]+))?", ps.stdout or ""):
+                vid, pid, serial = m.group(1).lower(), m.group(2).lower(), (m.group(3) or "")
+                reg = VENDOR_REGISTRY.get(vid)
+                if not reg or (vid, pid, serial) in seen:
+                    continue
+                seen.add((vid, pid, serial))
+                key = f"{vid}:{pid}"
+                out.append({
+                    "vid": vid, "pid": pid, "product": None, "serial": serial or None,
+                    "vendor": reg["vendor"], "probe": reg["probe"], "uart": None,
+                    "known_board": known.get(key, {}).get("id"),
+                    "known_chip": known.get(key, {}).get("chip"),
+                })
+        except Exception:
+            pass  # best-effort — empty list simply means "nothing detected"
     return out
 
 

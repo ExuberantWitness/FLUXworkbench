@@ -109,6 +109,13 @@ const api = {
   schedulerDemo(): Promise<void> {
     return ipcRenderer.invoke("flux:schedulerDemo");
   },
+  // ── 现场快照 (scene snapshot): capture / import the last N minutes ──
+  sceneDump(extra?: Record<string, unknown>): Promise<{ file: string; events: number }> {
+    return ipcRenderer.invoke("flux:sceneDump", extra);
+  },
+  sceneLoad(): Promise<Record<string, unknown> | null> {
+    return ipcRenderer.invoke("flux:sceneLoad");
+  },
   // ── PhysicalDevBench ──
   benchRun(taskIds?: string[], presets?: string[]): Promise<Array<Record<string, unknown>>> {
     return ipcRenderer.invoke("flux:benchRun", taskIds, presets);

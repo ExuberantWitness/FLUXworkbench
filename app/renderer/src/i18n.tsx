@@ -129,6 +129,10 @@ const dict: Record<string, { en: string; zh: string }> = {
   "dash.alarmTip": { en: "generates real cross-band traffic, then a hardware alarm preempts every task below the Device band", zh: "生成真实跨优先级流量，再由硬件告警抢占所有低于 Device 带的任务" },
   "dash.schedDemo": { en: "▶ Run preempt demo", zh: "▶ 运行抢占演示" },
   "rp.sched": { en: "🧬 Kernel Scheduler", zh: "🧬 内核调度器" },
+  "scene.save": { en: "Save scene", zh: "保存现场" },
+  "scene.saveTip": { en: "Capture the last 10 minutes (your words, system info, every event) into one portable JSON — attach it to a bug report; the maintainer can replay it on any OS", zh: "把最近 10 分钟一键打包（你说过的话、系统信息、全部事件）成一个跨平台 JSON 文件——贴到 issue 里，维护者在任何系统上都能导入复现现场" },
+  "scene.load": { en: "Import scene", zh: "导入现场" },
+  "scene.loadTip": { en: "Open a flux-scene JSON captured on another machine and inspect its full timeline here", zh: "打开别人机器上导出的现场快照，在本机完整还原时间线排查" },
   // Alarm banner
   "alarm.banner": { en: "⚠ ALARM — low-band tool calls preempted", zh: "⚠ 告警——低优先级工具调用已被抢占" },
   "alarm.resume": { en: "Resume", zh: "恢复" },

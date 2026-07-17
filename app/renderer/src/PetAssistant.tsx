@@ -54,6 +54,10 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
   const [face, setFace] = useState<keyof typeof FACES>("idle");
   const [bubble, setBubble] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<PetMsg[]>([]);
+  // mirror the transcript for 现场快照 (scene snapshot) — "what did the user say"
+  useEffect(() => {
+    try { localStorage.setItem("flux.petLog", JSON.stringify(msgs.slice(-50))); } catch { /* quota */ }
+  }, [msgs]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedbackMode, setFeedbackMode] = useState(false);
@@ -318,7 +322,12 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
         return;
       }
       // intent first: does this map to a guided flow? if so, lead the user.
-      const fid = await classify(q);
+      let fid = await classify(q);
+      // Real-hardware probing (udev/openocd) is Linux-first; on Windows the
+      // "bringup" flow dead-ends waiting for device.attached — route straight
+      // to the mission flow (识别→devready 走 开始任务), which honors the
+      // board hint from the user's words.
+      if (fid === "bringup" && /Windows/i.test(navigator.userAgent)) fid = "bringup-asset";
       if (fid && guideById(fid)) {
         setMsgs((m) => [...m, { role: "pet", text: `${t("guide.leadIn")}《${t(guideById(fid)!.titleKey)}》` }]);
         setFace("happy");

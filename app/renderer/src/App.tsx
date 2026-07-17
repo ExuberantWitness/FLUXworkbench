@@ -6,6 +6,7 @@ import { UnitPortPanel } from "./UnitPortPanel";
 import { AssetsPanel } from "./AssetsPanel";
 import { DashboardPanel } from "./DashboardPanel";
 import { SchedulerViz, type SchedulerState } from "./SchedulerViz";
+import { SceneViewer, type Scene } from "./SceneViewer";
 import { TerminalPanel } from "./TerminalPanel";
 import { CodeView } from "./CodeView";
 import { PipelineViz } from "./PipelineViz";
@@ -40,6 +41,7 @@ export function App() {
   const { t } = useLang();
   const [events, setEvents] = useState<FluxEvent[]>([]);
   const [schedState, setSchedState] = useState<SchedulerState | null>(null);
+  const [scene, setScene] = useState<Scene | null>(null); // imported 现场快照
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [leftTab, setLeftTab] = useState<LeftTab>("explorer");
@@ -409,7 +411,13 @@ export function App() {
       </main>
       <RightPanel events={events} state={state} fluxAssets={fluxAssets}
         rawEvents={events} wsLabel={wsLabel} mcpServers={mcpServers} onOpenAsset={setDetailAsset} schedState={schedState} />
-      <Footer state={state} osInfo={osInfo} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown} />
+      <Footer state={state} osInfo={osInfo} condaEnvs={condaEnvs} condaActive={condaActive} setCondaActive={setCondaActive} condaDropdown={condaDropdown} setCondaDropdown={setCondaDropdown}
+        onSceneDump={() => {
+          const petLog = ((): unknown[] => { try { return JSON.parse(localStorage.getItem("flux.petLog") ?? "[]"); } catch { return []; } })();
+          void window.flux?.sceneDump?.({ minutes: 10, petLog, chat: chatMsgs.slice(-30), provider: apiConfig.provider, model: apiConfig.model });
+        }}
+        onSceneLoad={() => { void window.flux?.sceneLoad?.().then((s: Scene | null) => { if (s) setScene(s); }); }} />
+      {scene && <SceneViewer scene={scene} onClose={() => setScene(null)} />}
       {detailAsset && <AssetDetail asset={detailAsset} projectPath={projectPath} onClose={() => setDetailAsset(null)}
         onDeleted={() => { void window.flux?.mcpCall?.("query_asset", {}).then((tx: string) => { const a = JSON.parse(tx); if (Array.isArray(a)) setFluxAssets(a); }); }}
         revealInExplorer={(p: string) => { const dir = p.substring(0, p.lastIndexOf("/")); const home = "/home/exuber"; setProjectPath(home + dir); setLeftTab("explorer"); }} />}
@@ -846,6 +854,9 @@ function Footer(props: any) { // eslint-disable-line @typescript-eslint/no-expli
       <div className="stage" title={t("rp.engineTip")}>{t("rp.engine")} <b>{state.brainReady?"ready":"..."}</b></div><span className="arr">→</span>
       <div className="stage">assets <b>{state.assets}</b></div>
       <div className="spacer" />
+      {/* 现场快照: one click captures the last 10 min for a bug report; import restores it here */}
+      <button className="ft-btn" data-guide="scene-save" title={t("scene.saveTip")} onClick={() => props.onSceneDump?.()}>📸 {t("scene.save")}</button>
+      <button className="ft-btn" title={t("scene.loadTip")} onClick={() => props.onSceneLoad?.()}>📂 {t("scene.load")}</button>
       {props.osInfo && (
         <div className="stage" title={`kernel ${props.osInfo.kernel ?? ""} · ${props.osInfo.session ?? ""}`}>
           🖥 <b>{props.osInfo.distro || props.osInfo.platform}</b> {props.osInfo.arch}
