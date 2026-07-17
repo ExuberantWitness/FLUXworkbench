@@ -336,7 +336,13 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
           + `Current tab: ${activeTab}\nUser question: `;
       } catch { ctx = "Answer briefly with markdown. Question: "; }
       const reply = await flux.mcpCall("chat", { message: ctx + q, use_assets: false });
-      setMsgs((m) => [...m, { role: "pet", text: reply }]);
+      // No LLM configured/reachable yet → onboard instead of dumping a raw error.
+      if (/LLM unavailable/i.test(reply)) {
+        setMsgs((m) => [...m, { role: "pet", text: t("pet.llmSetup") }]);
+        highlightGuide("api-config", true);
+      } else {
+        setMsgs((m) => [...m, { role: "pet", text: reply }]);
+      }
       setFace("idle");
     } catch (e) {
       setMsgs((m) => [...m, { role: "pet", text: `😵 ${(e as Error).message.slice(0, 120)}` }]);

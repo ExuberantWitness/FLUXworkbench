@@ -310,6 +310,7 @@ const dict: Record<string, { en: string; zh: string }> = {
   "pf.suggestRealBackend": { en: "🎉 Real board attached! Tip: set backend to `real` in Bring-up to verify firmware on actual silicon.", zh: "🎉 真板接入成功！提示：在「设备调通」把 backend 切成 `real`，就能在真芯片上验证固件。" },
   "pf.suggestRealHil": { en: "💡 This board is characterized (pin-map asset). Connect + authorize the real board to unlock firmware-level HIL.", zh: "💡 这块板已特征化（引脚资产）。接上并授权真板，就能解锁固件级 HIL 验证。" },
   "pf.suggestExport": { en: "💡 First asset committed! You can export the whole store as a bundle (⬆ in the right panel) and import it on another machine.", zh: "💡 第一个资产入库了！右栏 ⬆ 可以把资产库导出成 bundle，到另一台机器导入复用。" },
+  "pet.llmSetup": { en: "I can't reach an LLM yet 🔌 Open the **API Provider** panel I just highlighted (bottom-left), pick a cloud API — **DeepSeek** is cheap and recommended — and paste your API key. It's saved on this machine and remembered next time. (Advanced: point it at your own local vLLM instead.)", zh: "我还连不上大模型 🔌 打开我刚高亮的左下角 **API 服务商**，选一个云 API——推荐 **DeepSeek**（便宜好用）——把你的 API key 粘进去就能用了。key 只存在本机、下次自动记住。（进阶：也可以指向你本机自建的 vLLM。）" },
   "pet.title": { en: "Flux Pet", zh: "小 Flux" },
   "pet.readonly": { en: "read-only", zh: "只读" },
   "pet.greet": { en: "Hi! I'm your studio guide 🤖 Want to see a device brought up end-to-end? Open the **📦 Assets** tab I just highlighted — the ⚡ Bring-up flow lives there. Hit Start!", zh: "嗨！我是你的工作台向导 🤖 想看一台设备被端到端调通吗？点我刚高亮的 **📦 资产** 页——⚡ 设备调通就在里面，按开始！" },

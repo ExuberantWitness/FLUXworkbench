@@ -25,12 +25,14 @@ type LeftTab = "session" | "memory" | "explorer";
 const DEFAULT_PROJECT = "/home/exuber/hpm_sdk/samples/hello_world";
 
 // ── cc-switch style provider presets ──
+// Cloud APIs first (recommended — works on a fresh install with just a key).
+// vLLM stays as the self-hosted / offline option (run your own server).
 const PROVIDER_PRESETS: Record<string, { endpoint: string; model: string; label: string }> = {
-  vllm: { endpoint: "http://127.0.0.1:8000", model: "openbmb/MiniCPM-V-4.6", label: "Local vLLM" },
+  deepseek: { endpoint: "https://api.deepseek.com/v1", model: "deepseek-v4-flash", label: "DeepSeek（推荐 · 便宜）" },
   openai: { endpoint: "https://api.openai.com/v1", model: "gpt-4o", label: "OpenAI" },
   anthropic: { endpoint: "https://api.anthropic.com", model: "claude-sonnet-5-20250929", label: "Anthropic Claude" },
-  deepseek: { endpoint: "https://api.deepseek.com/v1", model: "deepseek-v4-flash", label: "DeepSeek" },
   mimo: { endpoint: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5", label: "Xiaomi MiMo" },
+  vllm: { endpoint: "http://127.0.0.1:8000", model: "openbmb/MiniCPM-V-4.6", label: "本地 vLLM（自建 · MiniCPM-V-4.6）" },
   custom: { endpoint: "", model: "", label: "Custom" },
 };
 
@@ -50,7 +52,17 @@ export function App() {
   const [condaActive, setCondaActive] = useState("base");
   const [condaDropdown, setCondaDropdown] = useState(false);
   const [customOpen, setCustomOpen] = useState<string | null>("api");
-  const [apiConfig, setApiConfig] = useState({ provider: "vllm", endpoint: "http://127.0.0.1:8000", apiKey: "", model: "openbmb/MiniCPM-V-4.6" });
+  // Cloud-first default so a fresh install just needs an API key; remembers the
+  // last provider/key across launches (machine-local, mirrored to ~/.flux/llm.json).
+  const [apiConfig, setApiConfig] = useState<{ provider: string; endpoint: string; apiKey: string; model: string }>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("flux.apiConfig") ?? "null");
+      if (s?.provider) return s;
+    } catch { /* first run */ }
+    return { provider: "deepseek", endpoint: PROVIDER_PRESETS.deepseek!.endpoint, apiKey: "", model: PROVIDER_PRESETS.deepseek!.model };
+  });
+  const apiConfigRef = useRef(apiConfig); apiConfigRef.current = apiConfig;
+  useEffect(() => { try { localStorage.setItem("flux.apiConfig", JSON.stringify(apiConfig)); } catch { /* quota */ } }, [apiConfig]);
   const [fluxAssets, setFluxAssets] = useState<{id:string;ts:number;type:string;components:string[]}[]>([]);
   const [building, setBuilding] = useState(false);
   const [buildResult, setBuildResult] = useState("");
@@ -78,6 +90,9 @@ export function App() {
       // scheduler.state is a high-frequency live snapshot — keep it OUT of the
       // 200-entry ring (it would flush everything else) and hold only the latest.
       if (e.topic === "scheduler.state") { setSchedState(e.data as unknown as SchedulerState); return; }
+      // Re-apply the saved API key to the freshly-booted brain (covers a brain
+      // that has no ~/.flux/llm.json yet — e.g. first run after the user set it).
+      if (e.topic === "brain.ready" && apiConfigRef.current.apiKey) window.flux?.sendSetApi?.(apiConfigRef.current);
       setEvents((p) => [...p.slice(-200), e]);
       if (e.topic === "agent.event" && e.data?.["step"] === "chat") {
         const reply = String(e.data?.["reply"] ?? "(no reply)");
@@ -554,7 +569,7 @@ function LeftSidebar(props: any) { // eslint-disable-line @typescript-eslint/no-
 
       {/* lower half: api / agent / memory / mcp / skill / conda */}
       <div className="custom-section">
-        <div className="custom-h" onClick={() => setCustomOpen(customOpen === "api" ? null : "api")}>
+        <div className="custom-h" data-guide="api-config" onClick={() => setCustomOpen(customOpen === "api" ? null : "api")}>
           {customOpen === "api" ? "▾" : "▸"} {t("side.api")}
         </div>
         {customOpen === "api" && (

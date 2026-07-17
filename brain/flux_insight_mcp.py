@@ -78,6 +78,30 @@ def _load_llm_json() -> None:
              f"tiers={[f'{t}:{c['model']}' for t, c in _tiers.items()]}")
 
 
+def _save_llm_json() -> None:
+    """Persist the current text/vision channels to ~/.flux/llm.json so the
+    provider + API key survive a restart (keys stay machine-local, never in the
+    repo). Preserves any existing `tiers` block."""
+    home = os.path.expanduser(os.environ.get("FLUX_HOME", "~/.flux"))
+    cfg_path = os.path.join(home, "llm.json")
+    try:
+        existing: dict[str, Any] = {}
+        try:
+            with open(cfg_path) as f:
+                existing = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        keys = ("provider", "endpoint", "api_key", "model")
+        existing["text"] = {k: _config[k] for k in keys}
+        existing["vision"] = {k: _vision_config[k] for k in keys}
+        os.makedirs(home, exist_ok=True)
+        with open(cfg_path, "w") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+        log.info(f"persisted llm.json: text={_config['provider']}/{_config['model']}")
+    except OSError as e:
+        log.warning(f"could not persist llm.json: {e}")
+
+
 _load_llm_json()
 
 # Tools that produce schema-constrained artifacts get the heavy tier by default.
@@ -112,9 +136,21 @@ def _record_usage(tool: str, cfg: dict[str, str], data: dict[str, Any], model: s
         pass
 
 
+def _utf8_safe(s: str) -> str:
+    """Drop lone surrogates (e.g. '\\udc94' produced when Windows-1252/latin-1
+    bytes reach us via surrogateescape in pasted text or stored asset context).
+    They cannot be UTF-8 encoded, so httpx's JSON body serialization raises
+    ('surrogates not allowed') and the whole LLM call fails. 'replace' on encode
+    swaps each offending char for '?'; valid non-ASCII (中文/emoji) is untouched."""
+    if not isinstance(s, str):
+        return s
+    return s.encode("utf-8", "replace").decode("utf-8")
+
+
 def _chat(prompt: str, cfg: dict[str, str] | None = None, tool: str = "") -> str:
     """Call the configured LLM provider (cfg = routed tier config, default text config)."""
     cfg = cfg or _config
+    prompt = _utf8_safe(prompt)
     try:
         import httpx
         provider = cfg["provider"]
@@ -159,6 +195,7 @@ def _chat(prompt: str, cfg: dict[str, str] | None = None, tool: str = "") -> str
 
 def _vision(prompt: str, image_path: str, tool: str = "") -> str:
     """Multimodal call on the configured provider (local vLLM default, cloud optional)."""
+    prompt = _utf8_safe(prompt)
     import httpx
     provider = _vision_config["provider"]
     if provider == "vllm":
@@ -525,11 +562,16 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": json.dumps(
                 {"preset": preset, "provider": _config["provider"], "model": _config["model"]})}]}
         target = _vision_config if args.get("target") == "vision" else _config
+        # The renderer sends camelCase `apiKey`; the brain config uses `api_key`.
+        # Without this alias the key silently never applies (cloud API unusable).
+        if "apiKey" in args and "api_key" not in args:
+            args = {**args, "api_key": args["apiKey"]}
         for k, v in args.items():
             # empty strings must not clobber keys loaded from llm.json
             if k in target and k != "target" and str(v) != "":
                 target[k] = str(v)
         log.info(f"API config updated ({args.get('target', 'text')}): {target['provider']} {target['model']}")
+        _save_llm_json()  # persist so the key survives a restart (machine-local)
         return {"content": [{"type": "text", "text": json.dumps(
             {"target": args.get("target", "text"), "provider": target["provider"], "model": target["model"]})}]}
     elif name == "schematic_to_netlist":
