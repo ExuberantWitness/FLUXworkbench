@@ -7,6 +7,11 @@ on:
     tags: ["v*"]
   workflow_dispatch: {}
 
+# electron-builder --publish always creates/uploads the GitHub Release; the
+# default GITHUB_TOKEN is read-only unless we grant write here.
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
