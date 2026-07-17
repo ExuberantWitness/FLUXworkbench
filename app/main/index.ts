@@ -270,13 +270,22 @@ async function bootKernel(): Promise<void> {
     const lsusb: string = await new Promise((res) => exec("lsusb", (_e, o) => res(o ?? "")));
     const present = boards.filter((b) => new RegExp(`ID\\s+${b["usb"]?.vid}:${b["usb"]?.pid}`, "i").test(lsusb));
     const g = goal.toLowerCase();
-    // board: goal-named board wins, else the single plugged-in board, else first profile
+    // board: goal-named board wins, else the single plugged-in board, else first
+    // profile. Match on digit-bearing tokens from the goal ("h743", "f103",
+    // "hpm6e00") appearing anywhere in the profile id/chip/name — the previous
+    // exact-id match missed "我连了h743开发板" vs id "nucleo-h743zi2".
+    const hints = g.split(/[^a-z0-9]+/).filter((t) => t.length >= 3 && /\d/.test(t));
     let board = opts.board
       ? boards.find((b) => b["id"] === opts.board)
-      : boards.find((b) => g.includes(b["id"]) || g.includes(String(b["chip"]).toLowerCase()) || g.includes(String(b["name"]).toLowerCase().split(" ").pop() ?? "＿"));
+      : boards
+          .map((b) => ({ b, n: hints.filter((h) => `${b["id"]} ${b["chip"]} ${b["name"]}`.toLowerCase().includes(h)).length }))
+          .filter((x) => x.n > 0)
+          .sort((a, z) => z.n - a.n)[0]?.b;
     if (!board) board = present[0] ?? boards[0];
     const isPresent = board ? present.some((p) => p["id"] === board!["id"]) : false;
-    const hasOpenocd = await new Promise<boolean>((r) => exec("command -v openocd", (_e, o) => r(!!(o ?? "").trim())));
+    // `command -v` doesn't exist on Windows — use `where` there.
+    const ocdProbe = process.platform === "win32" ? "where openocd" : "command -v openocd";
+    const hasOpenocd = await new Promise<boolean>((r) => exec(ocdProbe, (_e, o) => r(!!(o ?? "").trim())));
     // backend: explicit words override; else real when the board is physically
     // here + openocd available; else mock.
     let backend: "mock" | "sim" | "real" = opts.backend as "mock" | "sim" | "real";
@@ -783,7 +792,7 @@ ipcMain.handle("flux:listAssets", async () => {
   return new Promise((resolve) => {
     const py = BRAIN_PY;
     exec(`${py} -c "from flux_brain import asset_store;import json;print(json.dumps(asset_store.list_assets()))"`,
-      { env: { ...process.env, PYTHONPATH: process.env["FLUX_BRAIN_PATH"] ?? path.join(repoRoot(), "brain") } },
+      { env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8", PYTHONPATH: process.env["FLUX_BRAIN_PATH"] ?? path.join(repoRoot(), "brain") } },
       (err: Error | null, stdout: string) => { try { resolve(JSON.parse(stdout.trim())); } catch { resolve([]); } });
   });
 });

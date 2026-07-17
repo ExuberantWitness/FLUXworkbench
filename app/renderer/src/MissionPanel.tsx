@@ -59,8 +59,10 @@ export function MissionPanel({ events }: { events: FluxEvent[] }): React.ReactEl
     setMissionId("");
     try {
       // No dropdowns: the kernel auto-resolves board + backend from what's
-      // plugged in and the goal's own words. Just send intent.
-      const r = await flux.missionStart("Characterize the connected board and build a DevReady asset", {});
+      // plugged in and the goal's own words. Fold in the user's last utterance
+      // to 小Flux ("我连了h743开发板…") so their named board wins the resolve.
+      const hint = ((): string => { try { return localStorage.getItem("flux.missionHint") ?? ""; } catch { return ""; } })();
+      const r = await flux.missionStart(`Characterize the connected board and build a DevReady asset. ${hint}`, {});
       setResult(r); setMissionId(r.missionId);
     } catch (e) {
       setResult({ missionId: "", error: (e as Error).message });

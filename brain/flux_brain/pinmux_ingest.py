@@ -57,7 +57,9 @@ def _repo_root() -> Path:
 
 def load_boards() -> list[dict[str, Any]]:
     try:
-        data = json.loads((_repo_root() / "skills" / "boards.json").read_text())
+        # explicit utf-8: boards.json carries 中文 references — Windows default
+        # (GBK) dies mid-file with "'gbk' codec can't decode byte 0x94"
+        data = json.loads((_repo_root() / "skills" / "boards.json").read_text(encoding="utf-8"))
         return data.get("boards", [])
     except (OSError, json.JSONDecodeError):
         return []

@@ -128,6 +128,7 @@ const dict: Record<string, { en: string; zh: string }> = {
   "dash.alarmBtn": { en: "Scheduler preempt demo", zh: "内核调度演示" },
   "dash.alarmTip": { en: "generates real cross-band traffic, then a hardware alarm preempts every task below the Device band", zh: "生成真实跨优先级流量，再由硬件告警抢占所有低于 Device 带的任务" },
   "dash.schedDemo": { en: "▶ Run preempt demo", zh: "▶ 运行抢占演示" },
+  "rp.sched": { en: "🧬 Kernel Scheduler", zh: "🧬 内核调度器" },
   // Alarm banner
   "alarm.banner": { en: "⚠ ALARM — low-band tool calls preempted", zh: "⚠ 告警——低优先级工具调用已被抢占" },
   "alarm.resume": { en: "Resume", zh: "恢复" },

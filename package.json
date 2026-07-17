@@ -1,6 +1,6 @@
 {
   "name": "fluxworkbench",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "author": "Flux Workbench Team",
   "description": "Flux Workbench v2 — robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
   "packageManager": "pnpm@9.15.0",

@@ -251,7 +251,7 @@ _DEFAULT_PRICES: dict[str, dict[str, float]] = {
 def _load_prices() -> dict[str, dict[str, float]]:
     prices = dict(_DEFAULT_PRICES)
     try:
-        with open(FLUX_DIR / "llm.json") as f:
+        with open(FLUX_DIR / "llm.json", encoding="utf-8") as f:
             for model, p in json.load(f).get("prices", {}).items():
                 prices[model] = {"in": float(p.get("in", 0)), "out": float(p.get("out", 0))}
     except (OSError, json.JSONDecodeError, ValueError, AttributeError):

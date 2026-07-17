@@ -13,6 +13,16 @@ import os
 import logging
 from typing import Any
 
+# Windows python defaults stdio + open() to the ANSI codepage (GBK on Chinese
+# systems); MCP JSON framing and log lines carry emoji/中文, so force UTF-8
+# regardless of how we were spawned (PYTHONUTF8 is also set by the studio).
+if os.name == "nt":
+    for _stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 log = logging.getLogger("flux_insight")
 
@@ -63,7 +73,7 @@ _tiers: dict[str, dict[str, str]] = {}
 def _load_llm_json() -> None:
     cfg_path = os.path.join(os.path.expanduser(os.environ.get("FLUX_HOME", "~/.flux")), "llm.json")
     try:
-        with open(cfg_path) as f:
+        with open(cfg_path, encoding="utf-8") as f:
             file_cfg = json.load(f)
     except (OSError, json.JSONDecodeError):
         return
@@ -87,7 +97,7 @@ def _save_llm_json() -> None:
     try:
         existing: dict[str, Any] = {}
         try:
-            with open(cfg_path) as f:
+            with open(cfg_path, encoding="utf-8") as f:
                 existing = json.load(f)
         except (OSError, json.JSONDecodeError):
             existing = {}
@@ -95,7 +105,7 @@ def _save_llm_json() -> None:
         existing["text"] = {k: _config[k] for k in keys}
         existing["vision"] = {k: _vision_config[k] for k in keys}
         os.makedirs(home, exist_ok=True)
-        with open(cfg_path, "w") as f:
+        with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(existing, f, indent=2, ensure_ascii=False)
         log.info(f"persisted llm.json: text={_config['provider']}/{_config['model']}")
     except OSError as e:

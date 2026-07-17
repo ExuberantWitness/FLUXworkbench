@@ -299,6 +299,9 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
 
   // ── ask: classify intent → guided flow FIRST; else read-only Q&A ──
   const ask = async (q: string): Promise<void> => {
+    // Remember the user's own words — MissionPanel folds them into the mission
+    // goal so board auto-resolve can honor "我连了h743开发板" (board hints).
+    try { localStorage.setItem("flux.missionHint", q.slice(0, 300)); } catch { /* quota */ }
     if (!q.trim() || busy) return;
     setMsgs((m) => [...m, { role: "user", text: q }]);
     setInput(""); setBusy(true); setFace("think");
@@ -340,6 +343,10 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
       if (/LLM unavailable/i.test(reply)) {
         setMsgs((m) => [...m, { role: "pet", text: t("pet.llmSetup") }]);
         highlightGuide("api-config", true);
+        // never let this pulse stick forever: clear on click or after 30s
+        // (guard: don't clobber an active guided flow's own highlight)
+        document.querySelector('[data-guide="api-config"]')?.addEventListener("click", () => { if (!flowRef.current.flow) clearGuide(); }, { once: true });
+        setTimeout(() => { if (!flowRef.current.flow) clearGuide(); }, 30_000);
       } else {
         setMsgs((m) => [...m, { role: "pet", text: reply }]);
       }

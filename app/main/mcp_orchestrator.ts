@@ -55,7 +55,10 @@ export class MCPOrchestrator {
 
     const proc = spawn(config.command, config.args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...config.env },
+      // Windows python defaults to the ANSI codepage (GBK on Chinese systems)
+      // for file I/O and stdio — force UTF-8 so boards.json/SVD/netlist reads
+      // and the MCP JSON framing never die with 'gbk' codec errors.
+      env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8", ...config.env },
     });
 
     this.servers.set(config.name, proc);

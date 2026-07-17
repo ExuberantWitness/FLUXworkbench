@@ -730,9 +730,11 @@ function RightPanel(props: any) { // eslint-disable-line @typescript-eslint/no-e
       {/* ── the dev flow, visualized (merged Overview + Insight Loop) ── */}
       <Fold title={t("rp.pipeline")}>
         <PipelineViz events={rawEvents} />
-        <div style={{ marginTop: 6 }}>
-          <SchedulerViz state={schedState ?? null} onDemo={() => void window.flux?.schedulerDemo?.()} />
-        </div>
+      </Fold>
+
+      {/* live kernel scheduler — its own fold so users can collapse it (点标题即收起) */}
+      <Fold title={t("rp.sched")} defaultOpen={false}>
+        <SchedulerViz state={schedState ?? null} onDemo={() => void window.flux?.schedulerDemo?.()} />
       </Fold>
 
       {/* ── software modules: kernel-schedulable, permission-scoped ── */}
