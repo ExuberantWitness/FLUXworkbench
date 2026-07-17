@@ -1,6 +1,6 @@
 {
   "name": "fluxworkbench",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Flux Workbench Team",
   "description": "Flux Workbench v2 — robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
   "packageManager": "pnpm@9.15.0",
@@ -80,6 +80,7 @@
         "AppImage",
         "deb"
       ],
+      "maintainer": "Flux Workbench Team <flux@fluxworkbench.dev>",
       "category": "Development",
       "executableName": "fluxworkbench",
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
@@ -88,7 +89,8 @@
       {
         "provider": "github",
         "owner": "ExuberantWitness",
-        "repo": "FLUXworkbench"
+        "repo": "FLUXworkbench",
+        "releaseType": "release"
       }
     ],
     "win": {
