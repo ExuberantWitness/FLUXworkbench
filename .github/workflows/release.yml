@@ -48,7 +48,13 @@ jobs:
         run: node scripts/fetch-python.mjs
 
       - name: Install JS deps
-        run: pnpm install --frozen-lockfile
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            pnpm install --frozen-lockfile && exit 0
+            echo "::warning::pnpm install failed (attempt $i/3), retrying in 10s…"; sleep 10
+          done
+          exit 1
 
       - name: Build renderer + main
         run: pnpm -r build
