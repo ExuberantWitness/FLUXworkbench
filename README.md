@@ -103,8 +103,8 @@ docs/           architecture.md + adr/* + tutorials/*
 |---|---|---|
 | **Windows** | `FluxWorkbench-<ver>-win-x64.exe` | 双击 → Next → Finish |
 | **macOS**（Apple Silicon）| `…-mac-arm64.dmg`（Intel 版随后补）| 打开 .dmg → 拖进 Applications → 首次**右键 → 打开** |
-| **Linux** | `…-linux-x64.AppImage`（自更新）| `chmod +x` 后双击 |
-| **Linux (Debian/Ubuntu)** | `…-linux-x64.deb` | `sudo apt install ./…deb` |
+| **Linux** | `…-linux-x86_64.AppImage`（自更新）| `chmod +x` 后双击 |
+| **Linux (Debian/Ubuntu)** | `…-linux-amd64.deb` | `sudo apt install ./…deb` |
 
 首次启动直接进 **mock/仿真模式**——无需任何硬件，就能跑一遍设备上机、建出一份 DevReady 资产。完整步骤、macOS 未签名提示、重型 SDK/工具链按需安装：**[INSTALL.md](INSTALL.md)**。
 
