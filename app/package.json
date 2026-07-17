@@ -1,7 +1,7 @@
 {
   "name": "@fluxworkbench/app",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Flux Workbench studio — Electron + React + Monaco (VSCode-style) + kernel in main",
   "main": "out/main/index.js",
   "scripts": {

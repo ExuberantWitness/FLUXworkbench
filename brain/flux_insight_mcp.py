@@ -19,7 +19,10 @@ log = logging.getLogger("flux_insight")
 # flux_brain is editable-installed in brain/.venv; fall back to sibling path
 # so the server also works when launched with a bare python3.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flux_brain import asset_store, board_skillgen, chip_bind, codegen, devready, dts_ingest, fluxweave_core, onboard, pcb_ingest, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
+# fluxweave_core is imported lazily inside its two tool handlers below: it pulls
+# in numpy + a vendored stl_metadata, and a missing heavy/optional dep must NOT
+# take down the other 38 tools (chat, guide_match, …) at server startup.
+from flux_brain import asset_store, board_skillgen, chip_bind, codegen, devready, dts_ingest, onboard, pcb_ingest, pdf_ingest, pinmux_ingest, repl_gen, svd_ingest  # noqa: E402
 from flux_brain.llm_ollama import SCHEMATIC_PROMPT  # noqa: E402
 from flux_brain.llm_vllm import _data_url  # noqa: E402
 
@@ -615,6 +618,7 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": json.dumps(sl, ensure_ascii=False)}]}
     elif name == "fw_generate_urdf":
         import hashlib
+        from flux_brain import fluxweave_core  # lazy: needs numpy + vendored stl_metadata
         graph = fluxweave_core.GraphSpec.from_dict(args["graph"])
         if args.get("out_dir"):
             result = fluxweave_core.export_urdf_project(graph, args["out_dir"])
@@ -635,6 +639,7 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": json.dumps(
             {"asset_id": aid, "type": "urdf", **result, "urdf": urdf_text[:1000]}, ensure_ascii=False)}]}
     elif name == "fw_read_metadata":
+        from flux_brain import fluxweave_core  # lazy: needs numpy + vendored stl_metadata
         xml_text = fluxweave_core.read_metadata(args["stl_path"])
         if xml_text is None:
             return {"content": [{"type": "text", "text": json.dumps({"error": "no embedded metadata"})}]}

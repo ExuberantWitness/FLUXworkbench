@@ -1,6 +1,6 @@
 {
   "name": "fluxworkbench",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Flux Workbench Team",
   "description": "Flux Workbench v2 — robot-dev Claude Code. TS studio (Electron) + Python execution + C tools, microkernel + uORB/Zenoh.",
   "packageManager": "pnpm@9.15.0",
@@ -73,6 +73,13 @@
       {
         "from": "benchmarks",
         "to": "benchmarks"
+      },
+      {
+        "from": "vendor/integrations/FluxWeave",
+        "to": "vendor/integrations/FluxWeave",
+        "filter": [
+          "**/*.py"
+        ]
       }
     ],
     "linux": {

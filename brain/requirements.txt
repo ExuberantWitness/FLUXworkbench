@@ -3,3 +3,4 @@
 httpx>=0.27
 cmsis-svd>=0.4          # ingest_svd (register maps)
 pdfplumber>=0.11        # ingest_datasheet (reference-manual PDFs)
+numpy>=1.26             # fluxweave_core (design_urdf geometry) — imported at MCP load
