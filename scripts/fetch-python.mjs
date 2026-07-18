@@ -23,8 +23,17 @@ const out = (cmd) => execSync(cmd, { shell: true, maxBuffer: 64 * 1024 * 1024 })
 if (existsSync("dist-python/python")) {
   console.log("dist-python/python already staged — skip (rm -rf dist-python to refetch)");
 } else {
-  // resolve latest release asset via GitHub API (curl honors proxy env)
-  const rel = JSON.parse(out(`curl -sL https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest`));
+  // resolve latest release asset via GitHub API (curl honors proxy env).
+  // Authenticate when a token is around: unauthenticated API calls are capped
+  // at 60/hr per IP and shared CI runner IPs exhaust that (a macOS release leg
+  // died exactly here while linux/win passed in the same run).
+  const tok = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "";
+  const auth = tok ? `-H "Authorization: Bearer ${tok}"` : "";
+  const rel = JSON.parse(out(`curl -sL ${auth} https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest`));
+  if (!Array.isArray(rel.assets)) {
+    console.error(`GitHub API returned no assets (rate-limited?): ${JSON.stringify(rel).slice(0, 200)}`);
+    process.exit(1);
+  }
   const asset = (rel.assets ?? []).find((a) =>
     a.name.includes("cpython-3.12.") && a.name.includes(triple) && a.name.endsWith("install_only_stripped.tar.gz"))
     ?? (rel.assets ?? []).find((a) =>

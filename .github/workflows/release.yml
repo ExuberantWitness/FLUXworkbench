@@ -43,9 +43,19 @@ jobs:
           cache: pnpm
 
       # Bake a relocatable CPython (with brain deps) into dist-python/ for THIS
-      # runner's OS. Users install nothing.
+      # runner's OS. Users install nothing. GH_TOKEN authenticates the GitHub
+      # API lookup (unauthenticated = 60/hr per IP → flaky on shared runners);
+      # retry covers transient download failures.
       - name: Embed Python runtime
-        run: node scripts/fetch-python.mjs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            node scripts/fetch-python.mjs && exit 0
+            echo "::warning::fetch-python failed (attempt $i/3), retrying in 15s…"; rm -rf dist-python; sleep 15
+          done
+          exit 1
 
       - name: Install JS deps
         shell: bash
