@@ -662,7 +662,19 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         except ValueError as e:
             raise RuntimeError(f"gen_test_plan: LLM did not return a valid plan ({e})") from e
     elif name == "ingest_svd":
-        summary = svd_ingest.commit_svd(args["svd_path"], args.get("chip"))
+        svd_path = os.path.expanduser(str(args["svd_path"]))
+        chip = args.get("chip")
+        if not os.path.exists(svd_path) and chip:
+            # Profile SVD paths can be stale, machine-bound or URLs (a field
+            # scene showed a Linux dev-machine path shipped inside boards.json
+            # to a Windows user). Self-heal: locate the SVD for this chip in
+            # the local cache or fetch it from upstream, then ingest that.
+            log.info(f"ingest_svd: {svd_path!r} not found — resolving SVD for {chip}")
+            summary = onboard.resolve_and_ingest_svd(str(chip))
+            if "error" in summary:
+                raise RuntimeError(str(summary["error"]))
+        else:
+            summary = svd_ingest.commit_svd(args["svd_path"], chip)
         log.info(f"asset committed: {summary['asset_id']} (register-map, {summary['registers']} regs)")
         return {"content": [{"type": "text", "text": json.dumps(summary, ensure_ascii=False)}]}
     elif name == "query_regmap":

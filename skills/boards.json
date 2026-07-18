@@ -56,7 +56,7 @@
         "toolchain_glob": "~/toolchains/*arm-none-eabi*",
         "note": "characterization/bind need no build; add a real H743 sample to enable cross-compile"
       },
-      "svd": "/home/exuber/.flux/svd/STM32H743x.svd",
+      "svd": "~/.flux/svd/STM32H743x.svd",
       "references": [
         {
           "title": "NUCLEO-H743ZI2 User Manual UM2407",
