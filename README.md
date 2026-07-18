@@ -5,9 +5,9 @@
 
 <div align="center">
 
-[![Flux Workbench 实机演示 — 真界面真数据](docs/media/hero-montage.gif)](docs/media/fluxworkbench-tutorial.mp4)
+[![Flux Workbench 实机演示 — 真界面真数据](docs/media/hero-montage.gif)](https://www.bilibili.com/video/BV1LeKw6JEJk)
 
-### ▶ [点击播放完整 4 分钟教程（含中文解说）](docs/media/fluxworkbench-tutorial.mp4)
+### ▶ [点击播放完整 4 分钟教程（含中文解说）· 哔哩哔哩](https://www.bilibili.com/video/BV1LeKw6JEJk)　·　[GitHub 内下载 MP4](docs/media/fluxworkbench-tutorial.mp4)
 
 设备上机 · 真板调通 · PCB→BSP · 实时内核 · DevReady 资产 — 上方为实机演示循环
 *A 4-minute narrated walkthrough — onboard a board, real bring-up, and the asset flywheel.*
