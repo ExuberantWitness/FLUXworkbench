@@ -3,6 +3,17 @@
 > **为物理世界打造的 AI 原生开发操作系统。**
 > The AI-native operating system for building the physical world — where agents and hardware are first-class citizens of one real-time kernel.
 
+<div align="center">
+
+[![Flux Workbench — 4 分钟快速上手](docs/media/tutorial-hero.png)](docs/media/fluxworkbench-tutorial.mp4)
+
+### ▶ 4 分钟看懂并上手 · [点击播放完整教程](docs/media/fluxworkbench-tutorial.mp4)
+
+安装 → 设备上机 → 真板调通 → PCB→BSP → 实时内核 → DevReady 资产
+*A 4-minute guided tour — install, onboard a board, real bring-up, and the asset flywheel.*
+
+</div>
+
 开发物理世界，慢从来不在写代码——在**每一次都要从头搞懂一块板子**：引脚怎么连、寄存器怎么摆、时钟怎么配、上电为什么不亮。这些理解散落在数据手册、原理图、十几个互不相通的厂商工具里，一次会话结束就蒸发，下一块板子、下一个人从零再来。
 
 Flux Workbench 把这套理解交给 Agent，并且在底座上做对了两件事：
