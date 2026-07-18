@@ -48,6 +48,12 @@ _STM32_TARGET = {
 }
 
 _CMSIS_SVD_BASE = "https://raw.githubusercontent.com/cmsis-svd/cmsis-svd-data/main/data"
+# Mirror order: GitHub raw first, jsdelivr CDN second (reachable where GitHub
+# raw is blocked — verified byte-identical for STM32H743x.svd).
+_SVD_MIRRORS = [
+    _CMSIS_SVD_BASE,
+    "https://cdn.jsdelivr.net/gh/cmsis-svd/cmsis-svd-data@main/data",
+]
 
 
 # ── 1. scan: full USB device tree, classified ──────────────────────────────
@@ -170,33 +176,45 @@ def _svd_candidates(chip: str) -> list[tuple[str, str]]:
 
 
 def resolve_and_ingest_svd(chip: str, refresh: bool = False) -> dict[str, Any]:
-    """Locate an SVD for `chip` (local cache → cmsis-svd-data), ingest it.
-    Returns the ingest summary or {error}."""
+    """Locate an SVD for `chip` (local cache → bundled skills/svd → mirrors),
+    ingest it. Returns the ingest summary or {error}."""
     cache_dir = Path(os.path.expanduser("~/.flux/svd"))
     cache_dir.mkdir(parents=True, exist_ok=True)
     # local cache hit
     for f in cache_dir.glob(f"*{chip[:9]}*.svd"):
         if not refresh and f.stat().st_size > 50_000:
             return svd_ingest.commit_svd(str(f), chip)
-    # fetch candidates
+    # bundled with the app (skills/svd/, shipped as extraResources) — the
+    # flagship boards work offline and behind blocked networks. A field scene
+    # (win32, zh-CN) showed raw.githubusercontent.com failing instantly.
+    bundled_dir = Path(__file__).resolve().parents[2] / "skills" / "svd"
+    for f in bundled_dir.glob(f"*{chip[:9]}*.svd"):
+        if f.stat().st_size > 50_000:
+            summary = svd_ingest.commit_svd(str(f), chip)
+            summary["svd_source"] = "bundled"
+            return summary
+    # fetch candidates — try each candidate across ALL mirrors before moving
+    # on (the first candidate is usually the right filename; a blocked mirror
+    # must not exhaust the candidate list)
     try:
         import httpx
     except ImportError:
         return {"error": "httpx unavailable — cannot fetch SVD"}
     for vendor_dir, fname in _svd_candidates(chip):
-        url = f"{_CMSIS_SVD_BASE}/{vendor_dir}/{fname}"
-        try:
-            r = httpx.get(url, timeout=40, follow_redirects=True)
-            if r.status_code == 200 and len(r.content) > 50_000 and b"<device" in r.content:
-                dest = cache_dir / fname
-                dest.write_bytes(r.content)
-                summary = svd_ingest.commit_svd(str(dest), chip)
-                summary["svd_url"] = url
-                return summary
-        except Exception:
-            continue
-    return {"error": f"no SVD found for {chip} (tried {len(_svd_candidates(chip))} candidates); "
-                     "provide an .svd path or use a PCB-BSP source"}
+        for base in _SVD_MIRRORS:
+            url = f"{base}/{vendor_dir}/{fname}"
+            try:
+                r = httpx.get(url, timeout=25, follow_redirects=True)
+                if r.status_code == 200 and len(r.content) > 50_000 and b"<device" in r.content:
+                    dest = cache_dir / fname
+                    dest.write_bytes(r.content)
+                    summary = svd_ingest.commit_svd(str(dest), chip)
+                    summary["svd_url"] = url
+                    return summary
+            except Exception:
+                continue
+    return {"error": f"no SVD found for {chip} (tried {len(_svd_candidates(chip))} candidates on "
+                     f"{len(_SVD_MIRRORS)} mirrors); check network, provide an .svd path, or use a PCB-BSP source"}
 
 
 # ── 3. profile: ensure boards.json has an entry, augment with live identity ─
