@@ -5,12 +5,12 @@
 
 <div align="center">
 
-[![Flux Workbench — 4 分钟快速上手](docs/media/tutorial-hero.png)](docs/media/fluxworkbench-tutorial.mp4)
+[![Flux Workbench 实机演示 — 真界面真数据](docs/media/hero-montage.gif)](docs/media/fluxworkbench-tutorial.mp4)
 
-### ▶ 4 分钟看懂并上手 · [点击播放完整教程](docs/media/fluxworkbench-tutorial.mp4)
+### ▶ [点击播放完整 4 分钟教程（含中文解说）](docs/media/fluxworkbench-tutorial.mp4)
 
-安装 → 设备上机 → 真板调通 → PCB→BSP → 实时内核 → DevReady 资产
-*A 4-minute guided tour — install, onboard a board, real bring-up, and the asset flywheel.*
+设备上机 · 真板调通 · PCB→BSP · 实时内核 · DevReady 资产 — 上方为实机演示循环
+*A 4-minute narrated walkthrough — onboard a board, real bring-up, and the asset flywheel.*
 
 </div>
 
