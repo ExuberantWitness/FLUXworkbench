@@ -862,6 +862,9 @@ def handle_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             "You route a user's request to ONE guided UI flow, or none.\n"
             f"Flows:\n{catalog}\n\n"
             f'User said: "{args.get("utterance", "")}"\n'
+            "Rules: match on the user's END GOAL, not surface words. If they name "
+            "both a starting action and a final artifact (e.g. 识别板子 + 建成 "
+            "devready 资产), pick the flow that DELIVERS the final artifact. "
             "Pick the single best matching flow id, or null if the user is just asking a "
             "question / none fits. Reply ONLY JSON: {\"flow_id\": \"<id>\" or null}."
         )

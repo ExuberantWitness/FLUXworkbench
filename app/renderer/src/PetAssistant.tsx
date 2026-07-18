@@ -223,17 +223,24 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
     if (a.kind === "tab" && centerTab === a.tab) { advance(); return; }
     if (a.kind === "subtab" && centerTab === "assets" && assetsSub === a.sub) { advance(); return; }
     // deviation: user switched to a tab that this step does not expect →
-    // re-read intent (three-souls: follow the human, don't fight them).
+    // re-confirm intent (three-souls: follow the human, don't fight them).
+    // Deterministic + debounced: a synthetic "用户切到了X页" utterance through
+    // the LLM produced nonsense in the field ("你想训练机器人?" while the user
+    // was lost identifying a board). Instead: only after the user SITTLES on
+    // the unexpected tab for 4s, offer the flow that literally starts there —
+    // no LLM, no guessing. A quick flick through tabs stays silent.
     if ((a.kind === "click" || a.kind === "event") && step.guide.startsWith("tab-") === false) {
       const expectTab = tabOfStep(g, stepIdx);
       if (expectTab && centerTab !== expectTab && centerTab !== "wiki") {
-        void classify(`用户切到了「${centerTab}」页`).then((fid) => {
-          if (fid && fid !== g.id) {
-            setPendingSwitch(fid);
+        const timer = setTimeout(() => {
+          const cand = GUIDES.find((g2) => g2.id !== g.id && tabOfStep(g2, 0) === centerTab);
+          if (cand && flowRef.current.flow?.id === g.id) {
+            setPendingSwitch(cand.id);
             setOpen(true);
-            setMsgs((m) => [...m, { role: "pet", text: `${t("guide.deviate")}《${t(guideById(fid)!.titleKey)}》？` }]);
+            setMsgs((m) => [...m, { role: "pet", text: `${t("guide.deviate")}《${t(cand.titleKey)}》？` }]);
           }
-        });
+        }, 4000);
+        return () => clearTimeout(timer);
       }
     }
   }, [centerTab, assetsSub]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -323,11 +330,13 @@ export function PetAssistant({ events, centerTab, assetsSub, schedState }: {
       }
       // intent first: does this map to a guided flow? if so, lead the user.
       let fid = await classify(q);
-      // Real-hardware probing (udev/openocd) is Linux-first; on Windows the
-      // "bringup" flow dead-ends waiting for device.attached — route straight
-      // to the mission flow (识别→devready 走 开始任务), which honors the
-      // board hint from the user's words.
-      if (fid === "bringup" && /Windows/i.test(navigator.userAgent)) fid = "bringup-asset";
+      // Real-hardware probing (udev/openocd) is Linux-first; on Windows BOTH
+      // real-probe flows ("bringup" authorize-and-connect AND "onboard" 新板
+      // 上机) dead-end at hardware steps — route straight to the mission flow
+      // (识别→devready 走 开始任务), which honors the user's board hint.
+      // Field scene 2026-07-17: "我链接了h743…转化为devready资产" classified
+      // to "onboard" on win32 — the previous remap only covered "bringup".
+      if ((fid === "bringup" || fid === "onboard") && /Windows/i.test(navigator.userAgent)) fid = "bringup-asset";
       if (fid && guideById(fid)) {
         setMsgs((m) => [...m, { role: "pet", text: `${t("guide.leadIn")}《${t(guideById(fid)!.titleKey)}》` }]);
         setFace("happy");
