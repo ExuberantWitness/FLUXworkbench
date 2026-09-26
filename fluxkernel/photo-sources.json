@@ -1,0 +1,15 @@
+{
+  "purpose": "Reference photographs; not engineering measurements",
+  "license": "https://unsplash.com/license",
+  "photos": {
+    "phone": "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=1200&q=85&fit=crop",
+    "car": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=1200&q=85&fit=crop",
+    "aircraft": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=1200&q=85&fit=crop"
+  },
+  "aircraft": {
+    "url": "https://images.unsplash.com/photo-1739681407676-6b17e635619e?w=1200&q=85&fit=crop",
+    "page": "https://unsplash.com/photos/a-large-passenger-jet-flying-through-a-blue-sky-Fl0dJbx0ils",
+    "photographer": "Stas Bezukh",
+    "license": "https://unsplash.com/license"
+  }
+}
