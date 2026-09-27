@@ -1,24 +1,27 @@
 {
-  "date": "2026-09-26",
+  "date": "2026-09-27",
   "kind": "recorded-real-model-results",
   "cases": [
     {
       "case": "phone",
       "run": "16f4a9945aac44a2",
-      "plan_sha256": "e9dad2607de893c8cab69e67cf0efd6636c0efeff910b9bd44859275bbfd93bf"
+      "plan_sha256": "e9dad2607de893c8cab69e67cf0efd6636c0efeff910b9bd44859275bbfd93bf",
+      "visual_status": "not-evaluated"
     },
     {
       "case": "car",
-      "run": "b9f5ec651fd040fe",
-      "plan_sha256": "787088d02d8a82ce50fc15f3c486add4323f86c66d7d7e039a64262f303e9547"
+      "run": "8fea8bbb42dc48a2",
+      "plan_sha256": "1da41fc52b40b6511457e209e58be345cf07b1d45c1a2ac84fdba8cea00bcc28",
+      "visual_status": "needs-review"
     },
     {
       "case": "aircraft",
-      "run": "2083c1262b24487a",
-      "plan_sha256": "2dec8bde6a6dcfa0cba5c562c25c1dc43ba5b06ab2d2f8005f8c4c22d4ae24f8"
+      "run": "2e6ee6b6ca3b4c41",
+      "plan_sha256": "c93faa510e05b7f40cd390d4c7344dec730908f1f4798af3df074cc3300e2718",
+      "visual_status": "needs-review"
     }
   ],
-  "tests_passed": 76,
+  "tests_passed": 158,
   "revision": {
     "total_parts": 40,
     "reused_parts": 39,
