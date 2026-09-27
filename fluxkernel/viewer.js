@@ -1,5 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import { OrbitControls } from './vendor/OrbitControls.js';
+const releaseVersion = new URL(import.meta.url).searchParams.get('v') || 'legacy';
 const el = id => document.getElementById('fk-' + id);
 const buttons = selector => [...document.querySelectorAll(selector)];
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -87,7 +88,7 @@ function perception(data){
 async function load(key){
   const sequence=++state.sequence;el('run-status').textContent='正在载入案例';
   try{
-    const response=await fetch(`/fluxkernel/${key}.json`);if(!response.ok)throw Error('load failed');const data=await response.json();if(sequence!==state.sequence)return;
+    const response=await fetch(`/fluxkernel/${key}.json?v=${encodeURIComponent(releaseVersion)}`);if(!response.ok)throw Error('load failed');const data=await response.json();if(sequence!==state.sequence)return;
     state.data=data;perception(data);state.view='product';el('explode').value=0;
     buttons('[data-fk-case]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fkCase===key)));
     el('input-image').src=`/fluxkernel/${key}-input.png`;el('input-image').alt=data.label+'案例的实际输入图片';
