@@ -74,15 +74,15 @@ function draw(){
 function perception(data){
   const pal=data.perception;
   el('visual-rounds').innerHTML='';
-  if(!pal){el('budget-context').textContent=`${data.model} · 手机为早期生成记录，尚未运行 Perception–Action Loop。切换汽车或飞机，可查看三轮评审与两次候选修订的有限预算实验。`;el('visual-status').textContent='尚未进行视觉评审';el('visual-detail').textContent='此案例为早期记录，没有渲染反馈证据。';return}
+  if(!pal){el('budget-context').textContent=`${data.model} · 手机为早期生成记录，尚未运行 Perception–Action Loop。切换汽车或飞机，可查看新版参数化设计的有限预算实验。`;el('visual-status').textContent='尚未进行视觉评审';el('visual-detail').textContent='此案例为早期记录，没有渲染反馈证据。';return}
   const reviewed=pal.rounds.filter(r=>r.ratings).length;
-  el('budget-context').textContent=`${data.model} · Perception–Action Loop · ${reviewed} 轮评审（初始 + ${Math.max(0,reviewed-1)} 次候选修订）。当前展示预算内保留的中间方案，外观仍待改进。`;
+  el('budget-context').textContent=`${data.version} · ${data.model} · Perception–Action Loop · 本次预算最多 ${pal.max_rounds} 轮，实际完成 ${reviewed} 轮。展示模型最终保留的候选，外观与工程性能仍需验证。`;
   el('visual-status').textContent=pal.quality_status==='model-threshold-met'?'达到模型评审门槛':'外观仍待改进';
-  const reasons={'budget-exhausted':'达到轮数预算','quality-threshold-met':'达到模型门槛','action-rejected':'修改被拒绝'};
+  const reasons={'budget-exhausted':'达到轮数预算','quality-threshold-met':'达到模型门槛','action-rejected':'修改被拒绝','model-stop':'模型决定停止'};
   el('visual-detail').textContent=`${data.model} · ${reviewed} 轮评审 · ${pal.model_calls} 次真实模型调用（含动作纠错） · 保留第 ${pal.selected_round+1} 轮候选 · ${reasons[pal.stop_reason]||pal.stop_reason}。下方展示每轮实际 CAD 渲染与评审。`;
   el('visual-rounds').innerHTML=pal.rounds.map(r=>{
     const scores=r.ratings?`轮廓 ${r.ratings.silhouette} / 比例 ${r.ratings.proportions} / 布局 ${r.ratings.layout}`:'未取得有效评审';
-    const failures=(r.action_attempts||[]).filter(a=>!a.accepted).length;
+    const failures=r.rejected_actions||0;
     const findings=(r.findings||[]).filter(f=>['major','blocking'].includes(f.severity));
     return `<article data-fk-round="${r.round}" data-selected="${r.round===pal.selected_round}"><h4>第 ${r.round+1} 轮${r.round===0?'（初始）':`（修订 ${r.round}）`}${r.round===pal.selected_round?' · 当前保留':''}</h4>${r.image?`<a href="${esc(r.image)}" target="_blank" rel="noopener noreferrer" aria-label="查看第 ${r.round+1} 轮四视图原图"><img src="${esc(r.image)}" alt="第 ${r.round+1} 轮实际 CAD 的等轴、侧、顶、前视图" loading="lazy" /></a>`:''}<p>${esc(scores)}</p><p>独立诊断 ${r.independent_issues??'—'} 项 · 主要问题 ${findings.length} 项${failures?` · 拒绝 ${failures} 次无效修改`:''}</p><ul>${findings.map(f=>`<li>${esc(f.observation)}</li>`).join('')}</ul></article>`;
   }).join('');
@@ -95,12 +95,12 @@ async function load(key){
     buttons('[data-fk-case]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fkCase===key)));
     el('input-image').src=`/fluxkernel/${key}-input.png`;el('input-image').alt=data.label+'案例的实际输入图片';
     el('run-status').textContent=`真实运行 · ${data.duration_s.toFixed(1)} s`;
-    el('proof-status').textContent=data.proof.accepted?'当前计划：条件化闭合已证明':'当前计划：尚未闭合';
-    el('proof-detail').textContent=`${data.counts.steps} 个制造步骤，展开 ${data.counts.equipment_parts} 个设备部件。Lean 检查依赖与路线；物理制造能力仍待验证。`;
+    el('proof-status').textContent=data.proof.accepted?'限定范围工程检查通过':'工程检查尚未通过';
+    el('proof-detail').textContent=`${data.counts.steps} 个制造步骤，展开 ${data.counts.equipment_parts} 个设备部件。形式化验证仅覆盖声明范围，物理制造能力仍待验证。`;
     el('assumptions').innerHTML=data.assumptions.map(s=>`<li>${esc(s)}</li>`).join('');el('gaps').innerHTML=data.gaps.map(s=>`<li>${esc(s)}</li>`).join('');draw();
   }catch(error){el('run-status').textContent='案例载入失败，请刷新重试'}
 }
 buttons('[data-fk-case]').forEach(b=>b.onclick=()=>load(b.dataset.fkCase));
 buttons('[data-fk-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.fkView;draw()});
 el('explode').oninput=explode;el('fit').onclick=fit;
-load('phone');
+load('aircraft');

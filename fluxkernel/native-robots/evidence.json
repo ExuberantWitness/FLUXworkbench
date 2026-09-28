@@ -1,37 +1,21 @@
 {
-  "schema": "fluxkernel-public-robot-bridge-v1",
+  "schema": "fluxkernel-public-robot-bridge-v2",
   "published": "2026-09-28",
-  "design_authority": "FluxKernel native robot.json; Lean and URDF/MJCF are generated branches",
-  "workflow_commit": "2b90ae3650ea474a2df891994467171fe8e22a49",
   "local_tests_passed": 272,
-  "lean_scope": [
-    "unique body/joint identities",
-    "acyclic ordered parents",
-    "nonnegative declared mass",
-    "joint references and ordered limits",
-    "driven-joint coverage",
-    "controller plant binding"
+  "capabilities": [
+    "Scoped Lean 4 validation",
+    "URDF/MJCF export",
+    "Robot personalization"
   ],
-  "numerical_projection_scope": "Three configurations compare frames, COM, mass, inertia and mesh bounds/centroids; not a formal equivalence theorem",
-  "not_implemented": [
-    "bidirectional lossless Lean/URDF conversion",
-    "general URDF import interface",
-    "Lean proof of kinematic export equivalence"
+  "limitations": [
+    "Not bidirectional lossless Lean/URDF conversion",
+    "No complete geometry or physical performance proof"
   ],
   "physical_status": "unverified",
   "personalization": {
     "model": "glm-5.3-flash",
     "max_rounds_per_run": 3,
-    "model_owns": [
-      "geometry",
-      "symmetry",
-      "revision",
-      "review",
-      "selection"
-    ],
-    "development_runs": 10,
-    "archived_provider_responses": 45,
-    "scope": "Additive head accessory. Final two runs are a frozen workflow; earlier debugging, rejected, interrupted and superseded runs retained privately."
+    "scope": "Model-designed additive head accessory prototypes"
   },
   "robots": {
     "microduck": {
@@ -41,84 +25,10 @@
       "max_rounds": 3,
       "selected_round": 0,
       "visual_status": "meets-brief",
-      "parent_native_sha256": "8795d7f3594e388468791b15f597534c15fe533d2f1cc9501e9cd6e1d80b94ee",
-      "run_id": "robot-pal-a03ce4b3",
       "added_mass_kg": 0.0020552335627632176,
-      "native_sha256": "f5882c4a1635022ba4a9e0ec17aa014a0e769a95e6b6016484747f492a39e937",
-      "pose_count": 31,
-      "verification": {
-        "verification": {
-          "accepted": true,
-          "native_sha256": "f5882c4a1635022ba4a9e0ec17aa014a0e769a95e6b6016484747f492a39e937",
-          "proof_accepted": true,
-          "proof_reexecuted": true,
-          "physical_status": "unverified"
-        },
-        "projection": {
-          "schema": "fk-robot-projection-check-v1",
-          "accepted": true,
-          "checks": [
-            {
-              "consumer": "native-mjcf",
-              "pose_fraction": null,
-              "max_frame_error": 7.771561172376096e-16,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 4.336808689942018e-19,
-              "max_mesh_moment_error_m": 4.6306299246456906e-10,
-              "accepted": true
-            },
-            {
-              "consumer": "urdf",
-              "pose_fraction": null,
-              "max_frame_error": 1.1102230246251565e-15,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 7.047314121155779e-19,
-              "max_mesh_moment_error_m": 4.630629976687395e-10,
-              "accepted": true
-            },
-            {
-              "consumer": "native-mjcf",
-              "pose_fraction": 0.35,
-              "max_frame_error": 7.771561172376096e-16,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 3.7947076036992655e-19,
-              "max_mesh_moment_error_m": 4.599035458019429e-10,
-              "accepted": true
-            },
-            {
-              "consumer": "urdf",
-              "pose_fraction": 0.35,
-              "max_frame_error": 8.881784197001252e-16,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 7.047314121155779e-19,
-              "max_mesh_moment_error_m": 4.599035544755603e-10,
-              "accepted": true
-            },
-            {
-              "consumer": "native-mjcf",
-              "pose_fraction": 0.65,
-              "max_frame_error": 7.771561172376096e-16,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 3.1170812458958252e-19,
-              "max_mesh_moment_error_m": 4.6156265094687843e-10,
-              "accepted": true
-            },
-            {
-              "consumer": "urdf",
-              "pose_fraction": 0.65,
-              "max_frame_error": 1.2212453270876722e-15,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 6.162363214622048e-19,
-              "max_mesh_moment_error_m": 4.615626596204958e-10,
-              "accepted": true
-            }
-          ],
-          "scope": "three deterministic FK poses, COM, mass, inertia and mesh bounds/centroids; not locomotion or dynamics equivalence",
-          "physical_status": "unverified"
-        },
-        "parent_unchanged": true
-      },
-      "mass_basis": "Uniform solid CAD and nominal polymer density; not measured printed mass",
+      "engineering_checks": "passed",
+      "export_checks": "passed",
+      "mass_basis": "Nominal CAD estimate; not measured printed mass",
       "interface_status": "unverified",
       "deployment_ready": false
     },
@@ -129,84 +39,10 @@
       "max_rounds": 3,
       "selected_round": 2,
       "visual_status": "meets-brief",
-      "parent_native_sha256": "09efe1c893020d8d01916620f879de9f2414eceababdd1dbbce2742364fd614a",
-      "run_id": "robot-pal-6985339a",
       "added_mass_kg": 0.0021487833055272654,
-      "native_sha256": "4a5f6cebb373e2ad8d8f5b3cd4f4692c264f356ad347cdce5a7f2b8dcd29f161",
-      "pose_count": 31,
-      "verification": {
-        "verification": {
-          "accepted": true,
-          "native_sha256": "4a5f6cebb373e2ad8d8f5b3cd4f4692c264f356ad347cdce5a7f2b8dcd29f161",
-          "proof_accepted": true,
-          "proof_reexecuted": true,
-          "physical_status": "unverified"
-        },
-        "projection": {
-          "schema": "fk-robot-projection-check-v1",
-          "accepted": true,
-          "checks": [
-            {
-              "consumer": "native-mjcf",
-              "pose_fraction": null,
-              "max_frame_error": 6.661338147750939e-16,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 1.400957793735219e-13,
-              "max_mesh_moment_error_m": 8.629283693162293e-08,
-              "accepted": true
-            },
-            {
-              "consumer": "urdf",
-              "pose_fraction": null,
-              "max_frame_error": 3.3407415722663814e-11,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 1.4009577946497914e-13,
-              "max_mesh_moment_error_m": 8.62936942944148e-08,
-              "accepted": true
-            },
-            {
-              "consumer": "native-mjcf",
-              "pose_fraction": 0.35,
-              "max_frame_error": 1.1102230246251565e-15,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 1.320598359450144e-13,
-              "max_mesh_moment_error_m": 6.959487930391361e-08,
-              "accepted": true
-            },
-            {
-              "consumer": "urdf",
-              "pose_fraction": 0.35,
-              "max_frame_error": 3.760358691096144e-11,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 1.3205983520386057e-13,
-              "max_mesh_moment_error_m": 6.959487929697472e-08,
-              "accepted": true
-            },
-            {
-              "consumer": "native-mjcf",
-              "pose_fraction": 0.65,
-              "max_frame_error": 8.881784197001252e-16,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 1.3775002530187075e-13,
-              "max_mesh_moment_error_m": 8.185522151066271e-08,
-              "accepted": true
-            },
-            {
-              "consumer": "urdf",
-              "pose_fraction": 0.65,
-              "max_frame_error": 3.713940266436566e-11,
-              "max_mass_error_kg": 0.0,
-              "max_inertia_error_kg_m2": 1.377500256195081e-13,
-              "max_mesh_moment_error_m": 8.185436415480973e-08,
-              "accepted": true
-            }
-          ],
-          "scope": "three deterministic FK poses, COM, mass, inertia and mesh bounds/centroids; not locomotion or dynamics equivalence",
-          "physical_status": "unverified"
-        },
-        "parent_unchanged": true
-      },
-      "mass_basis": "Uniform solid CAD and nominal polymer density; not measured printed mass",
+      "engineering_checks": "passed",
+      "export_checks": "passed",
+      "mass_basis": "Nominal CAD estimate; not measured printed mass",
       "interface_status": "unverified",
       "deployment_ready": false
     }
