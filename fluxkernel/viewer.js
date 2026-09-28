@@ -96,7 +96,7 @@ async function load(key){
     el('input-image').src=`/fluxkernel/${key}-input.png`;el('input-image').alt=data.label+'案例的实际输入图片';
     el('run-status').textContent=`真实运行 · ${data.duration_s.toFixed(1)} s`;
     el('proof-status').textContent=data.proof.accepted?'限定范围工程检查通过':'工程检查尚未通过';
-    el('proof-detail').textContent=`${data.counts.steps} 个制造步骤，展开 ${data.counts.equipment_parts} 个设备部件。形式化验证仅覆盖声明范围，物理制造能力仍待验证。`;
+    el('proof-detail').textContent=`${data.counts.steps} 个制造步骤，展开 ${data.counts.equipment_parts} 个设备部件。基于严格推理的工程检查仅覆盖声明范围，物理制造能力仍待验证。`;
     el('assumptions').innerHTML=data.assumptions.map(s=>`<li>${esc(s)}</li>`).join('');el('gaps').innerHTML=data.gaps.map(s=>`<li>${esc(s)}</li>`).join('');draw();
   }catch(error){el('run-status').textContent='案例载入失败，请刷新重试'}
 }

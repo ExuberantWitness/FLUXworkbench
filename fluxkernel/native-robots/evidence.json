@@ -3,12 +3,12 @@
   "published": "2026-09-28",
   "local_tests_passed": 272,
   "capabilities": [
-    "Scoped Lean 4 validation",
+    "Scoped engineering checks based on rigorous reasoning",
     "URDF/MJCF export",
     "Robot personalization"
   ],
   "limitations": [
-    "Not bidirectional lossless Lean/URDF conversion",
+    "Engineering checks cover declared assumptions only",
     "No complete geometry or physical performance proof"
   ],
   "physical_status": "unverified",
