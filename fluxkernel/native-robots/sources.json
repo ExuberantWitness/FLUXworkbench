@@ -1,0 +1,15 @@
+{
+  "microduck": {
+    "repository": "https://github.com/pollen-robotics/microduck_rl",
+    "commit": "1e79c29c97d8b38aee9eefde77a545860ba7658e",
+    "license": "Apache-2.0",
+    "notice": "microduck-LICENSE.txt"
+  },
+  "xgoduck": {
+    "repository": "https://github.com/LuwuDynamics/xgoduck_rl",
+    "commit": "326d77a1122870bdefa2c36403937502c958e69c",
+    "license": "Apache-2.0",
+    "notice": "xgoduck-LICENSE.txt"
+  },
+  "render_attribution": "Renders derive from the pinned RL models with a new GLM-designed additive accessory. Separate XGO hardware source files are not distributed."
+}
