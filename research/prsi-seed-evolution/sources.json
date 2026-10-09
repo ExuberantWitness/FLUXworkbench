@@ -1,0 +1,157 @@
+{
+  "title": "PRSI Seed design evolution: curated public image provenance",
+  "edition": "2026-10-09-v01",
+  "timezone": "Asia/Shanghai",
+  "note": "Archive references identify source records, not public download URLs. All images are digital design artifacts, not photographs of manufactured Seed systems. Hashes attest byte identity, not engineering validity. The latest installation redesign has no CAD image.",
+  "attribution": [
+    {
+      "name": "DataFlux Dynamics / FluxKernal",
+      "url": "https://github.com/DataFlux-Robot/FluxKernal",
+      "role": "Candidate designs, renderings and research summaries"
+    },
+    {
+      "name": "Franka Robotics — franka_description",
+      "url": "https://github.com/frankarobotics/franka_description",
+      "revision": "7aeeddc449edf8d62b594f9e36a81da53e7796f9",
+      "role": "Vendor arm geometry visualized in some historical CAD scenes; vendor endorsement is not implied"
+    },
+    {
+      "name": "WUJI Technology — wuji-description",
+      "url": "https://github.com/wuji-technology/wuji-description",
+      "revision": "c2cd7f8d1ef8b6dc8cb907c17daa5a88b4442d95",
+      "role": "Vendor hand geometry visualized in some historical CAD scenes; vendor endorsement is not implied"
+    }
+  ],
+  "images": [
+    {
+      "file": "media/01-equipment-cell.png",
+      "width": 1800,
+      "height": 1200,
+      "archival_reference": "fluxprsi_seed_showcase/20261007_v02/snapshots/cell_iso_20261007T053757Z.png",
+      "evidence_type": "Equipment-envelope CAD",
+      "bytes": 447938,
+      "sha256": "fac60102d7a61ba78454310f839c4db6e1449810dbe5f2ecd3ce3bd48a6c6e23",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/02-compact-mobile.png",
+      "width": 1800,
+      "height": 1200,
+      "archival_reference": "fluxprsi_mobile_seed/20261007_v03/renders/mobile_seed_iso_20261007T065226Z.png",
+      "evidence_type": "Concept CAD",
+      "bytes": 405052,
+      "sha256": "8aa314654fab144439efafd33ae3f800452f709aa170a7819d88697cfc13ad65",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/03-gantry.png",
+      "width": 1800,
+      "height": 1200,
+      "archival_reference": "fluxkernel_gantry_seed/20261007_v03/renders/gantry_working_iso_20261007T071948Z.png",
+      "evidence_type": "Structure CAD",
+      "bytes": 275120,
+      "sha256": "368cc831a3e6421dbc1c2caa35c2729416c2e911132c11604ba603106fb46f86",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/04-manufacturing-cell.png",
+      "width": 1920,
+      "height": 1440,
+      "archival_reference": "fluxkernel_gantry_seed/20261007_v07/cad/overview_iso_20261007T101334Z.png",
+      "evidence_type": "Proposed fixed workcell CAD",
+      "bytes": 463112,
+      "sha256": "075182f62159a8be54bcf041613d983cb5c1990a3df39c4c9e9399eba3b732a7",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/05-test-capital.png",
+      "width": 1800,
+      "height": 1200,
+      "archival_reference": "fluxkernel_gantry_seed/20261007_v08/cad/test_capital_iso_20261007T104226Z.png",
+      "evidence_type": "Proposed test-equipment envelopes",
+      "bytes": 348010,
+      "sha256": "96ec378d561569555b5972777e56013a74eda09e568862bf209c2fcbf210b1a4",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/06-integrated-mobile.png",
+      "width": 1800,
+      "height": 1200,
+      "archival_reference": "fluxkernel_gantry_seed/20261007_v09/cad_v03/mobile_iso_20261007T111717Z.png",
+      "evidence_type": "Integrated mobile candidate CAD",
+      "bytes": 406472,
+      "sha256": "372f12bf499bc6e9f07c41d8a4606fff6b639544b8c5016e9dffa52ba7cd61fe",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/07-five-arms.png",
+      "width": 1800,
+      "height": 1200,
+      "archival_reference": "fluxkernel_gantry_seed/20261007_v10/cad_v04/deployed_iso_20261007T144359Z.png",
+      "evidence_type": "Five-arm candidate CAD",
+      "bytes": 460022,
+      "sha256": "8800e2b0561fdbce07d711e408ecac0a878cd8107bff7227346885bde02d5373",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/08-local-repairs.png",
+      "width": 1600,
+      "height": 1200,
+      "archival_reference": "fluxkernel_gantry_seed/20261008_v33/cad-r3/iso_20261008T094415Z.png",
+      "evidence_type": "Partial assembly CAD; not a complete Seed",
+      "bytes": 279903,
+      "sha256": "8acf7b7214102abf8d77ffe8be5e2a4569cfecd0292c5c4b37bf9b2b31070fce",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/09-meta-restart.png",
+      "width": 836,
+      "height": 1361,
+      "archival_reference": "figures/prsi-seed-system-topology-20261008-v01.png",
+      "evidence_type": "Withdrawn candidate B dependency diagram; not CAD",
+      "bytes": 124718,
+      "sha256": "180896ebdc67cc993fb6e1212f225cb25d76766f75c07002ff46ad450970acd2",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/10-glm-cycle.png",
+      "width": 1600,
+      "height": 1200,
+      "archival_reference": "artifacts/prsi_full_cycle_glm_20261009_v03/review/iso_20261009T003505Z.png",
+      "evidence_type": "Failed GLM coarse CAD candidate",
+      "bytes": 255717,
+      "sha256": "9f2c96d23f67f2bb24f2cfec523ae2a8ff621075785c13c920e70b08308ebc94",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/11-astra-cycle.png",
+      "width": 1600,
+      "height": 1200,
+      "archival_reference": "artifacts/prsi_full_cycle_astra_20261009_v06/round-00/cad-attempt-00/execution/iso_20261009T014645Z.png",
+      "evidence_type": "Failed Astra full-scene CAD candidate",
+      "bytes": 435917,
+      "sha256": "4d9e0c1d8b44c95ba6d6d3d11b977e46e43d2df69b80193238d733e22b059834",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/12-mobile-stowed.png",
+      "width": 1600,
+      "height": 1200,
+      "archival_reference": "artifacts/prsi_mobile_restart_astra_20261009_v02/round-00/cad-attempt-00/execution/mobile_stowed_iso_20261009T045903Z.png",
+      "evidence_type": "Parent-only nominal stowed state; not validated motion",
+      "bytes": 329191,
+      "sha256": "b8612b38e82dffdb8ea4da15c3c2ba6998c0d0719191d08e02fc73f2846b846f",
+      "transformation": "none; original bytes copied"
+    },
+    {
+      "file": "media/12-mobile-working.png",
+      "width": 1600,
+      "height": 1200,
+      "archival_reference": "artifacts/prsi_mobile_restart_astra_20261009_v02/round-00/cad-attempt-00/execution/mobile_working_iso_20261009T045937Z.png",
+      "evidence_type": "Parent-only working state; not validated deployment",
+      "bytes": 359865,
+      "sha256": "446be84b2da0d19f977708a3646fa51e5a12733c3ebdbc271201fe9133f4d5c1",
+      "transformation": "none; original bytes copied"
+    }
+  ]
+}
