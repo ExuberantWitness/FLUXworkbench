@@ -69,10 +69,10 @@ export function revision(input, kind) {
 export function documentText(input, kind) {
   const original = plan(input);
   const revised = revision(input, kind);
-  return ["# 数瀚衍动 · 交付规划草案", "", "状态：本地规则演示；未调用 AI、未报价、未下单、未通过物理验收。", "描述按原文保留，以下规则仅根据明确选项整理。", "", "## 原需求", original.brief.brief, original.constraints, original.scope,
-    "", "## 拟定分工", "用户确认用途与取舍；数瀚衍动组织方案、供应、装调及整机验收。", "研发、加工和装调伙伴作为分包方参与，尚未匹配具体供应商。", "",
+  return ["# 数瀚衍动 · 交付需求清单（沟通版）", "", "来源：交付流程示例，依据所选条件整理。具体设计、合作方、报价与交期经团队评审后确认。", "", "## 原需求", original.brief.brief, original.constraints, original.scope,
+    "", "## 拟定分工", "用户确认用途与取舍；数瀚衍动组织方案、供应、装调及整机验收。", "研发、加工和装调伙伴按确认的任务参与。", "",
     "## 原需求待确认的验收事项", ...original.tests.map(x => `- ${x}`), "", "## 下一轮改型", revised.change,
-    "### 可保留候选（不等于验证通过）", ...revised.reuse.map(x => `- ${x}`), "### 修改或补充", ...revised.redesign.map(x => `- ${x}`), "### 必须重新验证", ...revised.retest.map(x => `- ${x}`),
+    "### 可复用设计候选", ...revised.reuse.map(x => `- ${x}`), "### 修改或补充", ...revised.redesign.map(x => `- ${x}`), "### 必须重新验证", ...revised.retest.map(x => `- ${x}`),
     "### 改型后的完整目标", revised.target.constraints, ...revised.target.tests.map(x => `- ${x}`),
-    "", "## 服务与隐私", "价格、工期、硬件及换新费用另行确认。会员不包含无限硬件换新。", "本草案仅下载或复制到本机，未保存到真实 DevReady 资产库；由用户自行决定是否发送。", "", "https://www.datafluxdynamics.ltd/delivery/"].join("\n");
+    "", "## 服务安排", "硬件服务会员提供持续指导与改型支持；硬件、维修与换新另行计价。", "本清单用于方案沟通，后续按约定指标进行工程验证与整机验收。", "", "https://www.datafluxdynamics.ltd/delivery/"].join("\n");
 }

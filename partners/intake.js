@@ -9,22 +9,23 @@ if (root) {
   const mail = root.querySelector('[data-partner-email]');
   const fields = ['name', 'capability', 'example', 'availability', 'contact'];
   const value = id => root.querySelector('#partner-' + id).value.trim();
+  const say = text => { status.textContent = text; status.hidden = !text; };
   function update() {
     const selected = role.selectedOptions[0];
     root.querySelector('#partner-capability').placeholder = selected.dataset.prompt;
     const message = [
       '你好，我希望与数瀚衍动交流以下合作：', '',
       '合作方向：' + selected.textContent,
-      '个人或机构：' + (value('name') || '待补充'),
-      '可提供能力：' + (value('capability') || '待补充'),
-      '代表案例或链接：' + (value('example') || '待补充，可另附脱敏资料'),
-      '所在地与可投入时间：' + (value('availability') || '待补充'),
+      ...(value('name') ? ['个人或机构：' + value('name')] : []),
+      ...(value('capability') ? ['可提供能力：' + value('capability')] : []),
+      ...(value('example') ? ['代表案例或链接：' + value('example')] : []),
+      ...(value('availability') ? ['所在地与可投入时间：' + value('availability')] : []),
       '联系方式：' + (value('contact') || '请通过本邮件回复'), '',
       '来自：' + canonical
     ].join('\n');
     draft.value = message;
-    mail.href = 'mailto:' + email + '?subject=' + encodeURIComponent('合作联系 / ' + selected.textContent + ' / ' + (value('name') || '待补充')) + '&body=' + encodeURIComponent(message);
-    status.textContent = '草稿已更新，尚未发送。请在邮件软件中确认发送，或复制后手动发送。';
+    mail.href = 'mailto:' + email + '?subject=' + encodeURIComponent('合作联系 / ' + selected.textContent + (value('name') ? ' / ' + value('name') : '')) + '&body=' + encodeURIComponent(message);
+    say('');
   }
   role.addEventListener('change', update);
   for (const field of fields) root.querySelector('#partner-' + field).addEventListener('input', update);
@@ -45,14 +46,15 @@ if (root) {
   }
   window.addEventListener('hashchange', syncHash);
   syncHash();
-  mail.addEventListener('click', () => { status.textContent = '请在邮件软件中确认发送。若没有打开邮件软件，请复制简介后手动发送；本站尚未提交资料。'; });
+  mail.addEventListener('click', () => { say('请在邮件中确认发送。如未打开邮件软件，可复制简介发送至 ' + email + '。'); });
   root.querySelector('[data-partner-copy]').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(draft.value);
-      status.textContent = '简介已复制。请粘贴到邮件并发送至 ' + email + '；资料尚未提交。';
+      say('合作简介已复制。');
     } catch {
+      root.querySelector('[data-partner-preview]').open = true;
       draft.focus(); draft.select();
-      status.textContent = '浏览器未允许复制。已选中草稿，请手动复制并通过邮件发送。';
+      say('请复制已选中的合作简介。');
     }
   });
   const share = root.querySelector('[data-partner-share]');

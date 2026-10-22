@@ -1,4 +1,4 @@
-import { presets, plan, revision, documentText } from "./model.mjs?v=afe29abf5c26c051";
+import { presets, plan, revision, documentText } from "./model.mjs?v=9627eb6e2ad455c4";
 
 function init() {
   const root = document.querySelector("[data-delivery-demo]");
@@ -17,7 +17,7 @@ function init() {
   };
   function show(step, focus = true) {
     if (step !== 0 && !current) {
-      say("先填写需求并整理草案，再查看后续步骤。");
+      say("先填写需求并整理清单，再查看后续步骤。");
       form.elements.brief.focus();
       return;
     }
@@ -27,7 +27,7 @@ function init() {
       else button.removeAttribute("aria-current");
     });
     if (focus) (root.querySelector(`[data-panel="${step}"] [data-focus]`) || form.elements.brief).focus({ preventScroll: true });
-    say(step === 0 ? "修改选项后，点击整理交付草案更新后续步骤。" : `第 ${step + 1} 步：草案演示，尚未发起真实交付。`);
+    say(["修改选项后，重新整理需求清单。", "确认用途与取舍，查看各环节分工。", "逐项确认交付内容与验收重点。", "选择一个变化，查看需要调整与验证的部分。"][step]);
   }
   function updateRevision() {
     if (!current) return;
@@ -41,7 +41,7 @@ function init() {
     current = null;
     copySequence++;
     root.querySelectorAll("[data-preset]").forEach(button => button.setAttribute("aria-pressed", "false"));
-    say("需求已改变，请重新整理草案；旧的交付规划不再有效。");
+    say("需求已更新，请重新整理清单。");
   }
   form.addEventListener("input", invalidate);
   form.addEventListener("change", invalidate);
@@ -49,7 +49,7 @@ function init() {
     invalidate();
     for (const [key, value] of Object.entries(presets[button.dataset.preset])) form.elements[key].value = value;
     button.setAttribute("aria-pressed", "true");
-    say("已填入示例，可以修改需求后整理草案。");
+    say("示例已填入，可以按你的需求调整。");
   }));
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -64,7 +64,7 @@ function init() {
     } catch (error) { say(error.message); form.elements.brief.focus(); }
   });
   root.querySelectorAll("[data-step], [data-goto]").forEach(button => button.addEventListener("click", () => show(Number(button.dataset.step ?? button.dataset.goto))));
-  change.addEventListener("change", () => { updateRevision(); say("已更新改型对比；保留候选仍需经过对应的验证。"); });
+  change.addEventListener("change", () => { updateRevision(); say("改型对比已更新，请查看修改项与验证项。"); });
   root.querySelector("[data-download]").addEventListener("click", () => {
     if (!current) return;
     const blob = new Blob([documentText(current.brief, change.value)], { type: "text/markdown;charset=utf-8" });
@@ -73,7 +73,7 @@ function init() {
     link.href = url; link.download = "DataFlux-delivery-brief.md";
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    say("已发起草案下载，请在浏览器下载列表中查看。内容未发送给团队。");
+    say("请在下载列表中查看需求清单。");
   });
   root.querySelector("[data-copy]").addEventListener("click", async () => {
     if (!current) return;
@@ -81,17 +81,17 @@ function init() {
     const text = documentText(current.brief, change.value);
     try {
       await navigator.clipboard.writeText(text);
-      if (sequence === copySequence) say("草案已复制。由你决定是否发送给团队。");
+      if (sequence === copySequence) say("需求清单已复制。");
     } catch {
       if (sequence !== copySequence) return;
-      say("浏览器未允许复制，请使用下载交付草案。");
+      say("复制未完成，请下载需求清单。");
     }
   });
   root.querySelector("[data-reset]").addEventListener("click", () => {
     current = null; copySequence++; form.reset(); change.selectedIndex = 0;
     root.querySelectorAll("[data-preset]").forEach(button => button.setAttribute("aria-pressed", "false"));
     root.querySelectorAll("[data-brief],[data-constraints],[data-scope],[data-tests],[data-reuse],[data-redesign],[data-retest],[data-change-label]").forEach(node => node.replaceChildren());
-    show(0); say("已清空本页需求与草案。没有向服务器提交内容。");
+    show(0); say("已清空，可以开始新的需求。");
   });
   // No persistent storage, backend calls, timers simulating progress, or hidden analytics.
 }
